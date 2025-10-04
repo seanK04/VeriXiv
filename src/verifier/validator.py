@@ -1,6 +1,5 @@
 from typing import Dict, List, Optional
 
-
 class RubricValidator:
     """Validate and extract rubric assessments."""
     

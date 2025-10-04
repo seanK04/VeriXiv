@@ -1,3 +1,10 @@
+"""
+Source: 
+Reproducibility in NLP: What Have We Learned from the Checklist?, Magnusson et. al.
+
+https://arxiv.org/pdf/2306.09562 
+"""
+
 BASIC_SCORE_PROMPT = \
 f"""Model Description - A clear description of the mathematical setting, algorithm, and/or model
 Link to Code - A link to a downloadable source code, with specification of all dependencies, including external libraries

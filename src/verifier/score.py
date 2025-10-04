@@ -1,25 +1,18 @@
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
-import fitz
 
 import os
 
 from constants import *
-from diskcache import Cache
 from prompts import PROMPT
 from validator import RubricValidator, NLP_REPRODUCABILITY_RUBRIC_FIELDS
 
-MODEL_NAME = "gemini-2.5-flash"
 
-def score(file_path: str, model_name, cache) -> dict[str, str]:
+def score(paper_text: str, model_name: str, cache) -> dict[str, str]:
     load_dotenv()
-    client = genai.Client()
-    doc = fitz.open(file_path)
-    paper_text = ''
-    for page in doc:
-        paper_text += page.get_text()
 
+    client = genai.Client()
     paper_tokens = client.models.count_tokens(
         model=model_name, contents=paper_text
     )
@@ -55,5 +48,5 @@ def score(file_path: str, model_name, cache) -> dict[str, str]:
 
     return result['fields']
 
-cache = Cache('./gemini_cache', size_limit=1e9)
-score(f"{DATA_ROOT}/2510.02306v1.pdf", MODEL_NAME, cache)
+# cache = Cache('./gemini_cache', size_limit=1e9)
+# score(f"{DATA_ROOT}/2510.02306v1.pdf", MODEL_NAME, cache)
