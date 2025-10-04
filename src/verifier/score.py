@@ -9,7 +9,7 @@ from prompts import PROMPT
 from validator import RubricValidator, NLP_REPRODUCABILITY_RUBRIC_FIELDS
 
 
-def score(paper_text: str, model_name: str, cache) -> dict[str, str]:
+def score(paper_text: str, model_name: str) -> dict[str, str]:
     load_dotenv()
 
     client = genai.Client()
