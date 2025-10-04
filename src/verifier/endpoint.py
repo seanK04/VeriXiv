@@ -60,14 +60,10 @@ def score_endpoint():
     for page in doc:
         paper_text += page.get_text()
     
-    if paper_id in cache:
-        print("Cache hit!")
-        score = cache[paper_id]
-    else:
-        print("Cache miss! Proceeding with Gemini API Call")
-        score = score_paper(paper_text, MODEL_NAME, cache)["fields"]
-        cache[paper_id] = score
-
+    # Call score_paper directly - let it handle its own caching
+    result = score_paper(paper_text, MODEL_NAME)
+    score = result['fields']  # Extract the fields from the result
+    
     return jsonify({
         "score": score,
         "paper_id": paper_id,

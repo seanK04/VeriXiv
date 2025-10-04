@@ -2,3 +2,7 @@
 **/.vscode
 **/.env
 **/gemini_cache
+src/data/
+node_modules/
+test_vectorize.js
+run_flask.py
