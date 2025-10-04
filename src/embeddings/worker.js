@@ -56,8 +56,13 @@ export default {
         return await handleGetPaper(request, env, corsHeaders);
       }
 
+      // Analyze paper reproducibility with similarity comparison
+      if (path === '/api/analyze' && method === 'POST') {
+        return await handleAnalyze(request, env, corsHeaders);
+      }
+
       // Default response
-      return new Response('VeriXiv Worker - Available endpoints: /api/health, /api/embed, /api/search, /api/similar, /api/upsert, /api/paper', { 
+      return new Response('VeriXiv Worker - Available endpoints: /api/health, /api/embed, /api/search, /api/similar, /api/upsert, /api/paper, /api/analyze', { 
         status: 404, 
         headers: corsHeaders 
       });
@@ -423,6 +428,115 @@ async function handleGetPaper(request, env, corsHeaders) {
     return new Response(JSON.stringify({ 
       error: 'Failed to get paper',
       message: error.message 
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// Handle paper analysis with similarity comparison
+async function handleAnalyze(request, env, corsHeaders) {
+  try {
+    const { text, topK = 5 } = await request.json();
+
+    if (!text || typeof text !== 'string') {
+      return new Response(JSON.stringify({ 
+        error: 'Text parameter is required and must be a string' 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    console.log(`Starting analysis for text: "${text.substring(0, 100)}..."`);
+
+    // Step 1: Generate embedding for the input text
+    const aiResponse = await env.AI.run('@cf/baai/bge-base-en-v1.5', {
+      text: [text]
+    });
+
+    if (!aiResponse || !aiResponse.data || !Array.isArray(aiResponse.data)) {
+      return new Response(JSON.stringify({ 
+        error: 'Failed to generate query embedding' 
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    const queryVector = aiResponse.data[0];
+    console.log(`Generated embedding with ${queryVector.length} dimensions`);
+
+    // Step 2: Find similar papers in Vectorize
+    const vectorizeResponse = await env.VEC.query(
+      Float32Array.from(queryVector),
+      { 
+        topK: Math.min(topK, 20), // Cap at 20 results
+        returnValues: false,
+        returnMetadata: true
+      }
+    );
+
+    if (!vectorizeResponse || !vectorizeResponse.matches) {
+      return new Response(JSON.stringify({ 
+        error: 'Vector search failed' 
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    console.log(`Found ${vectorizeResponse.matches.length} similar papers`);
+
+    // Step 3: Extract similar papers with metadata and PDF URLs
+    const similarPapers = vectorizeResponse.matches.map(match => ({
+      id: match.id,
+      title: match.metadata?.title || '',
+      authors: match.metadata?.authors || [],
+      categories: match.metadata?.categories || [],
+      published: match.metadata?.published || '',
+      similarity_score: match.score,
+      abstract: match.metadata?.abstract || '',
+      pdf_url: match.metadata?.pdf_url || `https://arxiv.org/pdf/${match.id.replace('arxiv:', '')}.pdf`
+    }));
+
+    if (similarPapers.length === 0) {
+      return new Response(JSON.stringify({ 
+        error: 'No similar papers found' 
+      }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Step 4: Return papers with PDF URLs ready for Flask analysis
+    return new Response(JSON.stringify({
+      success: true,
+      input_text: text.substring(0, 200) + (text.length > 200 ? '...' : ''),
+      similar_papers_found: similarPapers.length,
+      similar_papers: similarPapers,
+      analysis_ready: {
+        top_papers_for_analysis: similarPapers.slice(0, Math.min(topK, 5)),
+        flask_integration: {
+          endpoint: '/score',
+          method: 'POST',
+          sample_request: {
+            paper_id: similarPapers[0].id.replace('arxiv:', ''),
+            pdf_url: similarPapers[0].pdf_url  // Use PDF URL from Vectorize metadata
+          }
+        }
+      },
+      search_timestamp: new Date().toISOString()
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    console.error('Analysis error:', error);
+    return new Response(JSON.stringify({ 
+      error: 'Analysis failed',
+      message: error.message
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
