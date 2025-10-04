@@ -1,0 +1,16 @@
+name = "verixiv-worker"
+main = "src/embeddings/worker.js"
+compatibility_date = "2024-01-15"
+
+# Workers AI binding for embeddings
+[ai]
+binding = "AI"
+
+# Vectorize binding for similarity search
+[[vectorize]]
+binding = "VEC"
+index_name = "papers-index"
+
+# Environment variables
+[vars]
+VECTOR_INDEX = "papers-index"
