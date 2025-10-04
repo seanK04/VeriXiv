@@ -7,24 +7,22 @@ from score import score as score_paper
 from constants import MODEL_NAME
 from diskcache import Cache
 
+"""
+Endpoint for the scoring service
+by Gemini.
+
+Example Post Request:
+
+curl -X POST http://localhost:1919/score \
+     -H "Content-Type: application/json" \
+     -d '{
+           "paper_id": "2510.02306v1",
+           "pdf_url": "https://arxiv.org/pdf/2510.02306v1.pdf"
+         }'
+"""
+
 app = Flask(__name__)
 cache = Cache('./gemini_cache', size_limit=1e9)
-
-# @app.route("/score", methods=["GET"])
-# def hello():
-#     return jsonify({"message": "Hello, world!"})
-
-# COMMENTED OUT: Old PDF retrieval method using paper ID
-# def get_arxiv_pdf_as_bytes(paper_id: str):
-#     url = f"https://arxiv.org/pdf/{paper_id}.pdf"
-# 
-#     response = requests.get(url)
-#     if response.status_code == 200:
-#         print(f"Downloaded {paper_id}.pdf")
-#         return response.content
-# 
-#     print("Error downloading paper.")
-#     return None
 
 def get_pdf_as_bytes(pdf_url: str):
     """Download PDF from the provided URL (from Vectorize metadata)"""
@@ -62,8 +60,13 @@ def score_endpoint():
     for page in doc:
         paper_text += page.get_text()
     
-    # Perform reproducibility analysis
-    score = score_paper(paper_text, MODEL_NAME, cache)
+    if paper_id in cache:
+        print("Cache hit!")
+        score = cache[paper_id]
+    else:
+        print("Cache miss! Proceeding with Gemini API Call")
+        score = score_paper(paper_text, MODEL_NAME, cache)["fields"]
+        cache[paper_id] = score
 
     return jsonify({
         "score": score,

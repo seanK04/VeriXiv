@@ -22,21 +22,13 @@ def score(paper_text: str, model_name: str, cache) -> dict[str, str]:
         model=model_name, contents=contents
     )
 
-    model_response = None
-    if contents in cache:
-        print("Cache hit!")
-        model_response = cache[contents]
-    else:
-        print("Cache miss! Proceeding with Gemini API Call")
-        model_response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=contents,
-            config=types.GenerateContentConfig(
-                thinking_config=types.ThinkingConfig(thinking_budget=2000)
-            ),
-        ).text
-
-        cache[contents] = model_response
+    model_response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=contents,
+        config=types.GenerateContentConfig(
+            thinking_config=types.ThinkingConfig(thinking_budget=2000)
+        ),
+    ).text
 
     validator = RubricValidator(NLP_REPRODUCABILITY_RUBRIC_FIELDS)
     result = validator.validate(model_response)
@@ -46,7 +38,4 @@ def score(paper_text: str, model_name: str, cache) -> dict[str, str]:
     print(f"Valid: {result['valid']}")
     print(f"Errors: {result['errors']}")
 
-    return result['fields']
-
-# cache = Cache('./gemini_cache', size_limit=1e9)
-# score(f"{DATA_ROOT}/2510.02306v1.pdf", MODEL_NAME, cache)
+    return result
