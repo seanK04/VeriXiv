@@ -33,6 +33,7 @@ const HexGrid = () => {
   const [connections, setConnections] = useState([]);
   const [papers, setPapers] = useState([]);
   const [showCards, setShowCards] = useState(false);
+  const [isFadingOut, setIsFadingOut] = useState(false);
   const [hoveredPaper, setHoveredPaper] = useState(null);
   const [gridOffset, setGridOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -395,12 +396,21 @@ const HexGrid = () => {
     setPapers(mockPapers);
     setConnections(nearby);
     setShowCards(true); // Show cards initially
+    setIsFadingOut(false); // Reset fade-out state
     setLoading(false);
     
-    // Fade out cards after 1 second
+    // Start fade out after 2 seconds
+    setTimeout(() => {
+      setIsFadingOut(true);
+    }, 2000);
+    
+    // Hide cards completely after fade-out animation completes
+    // Cards fade out in staggered fashion (0.1s per card) + 0.6s animation duration
+    const fadeOutDuration = (mockPapers.length * 0.1 + 0.6) * 1000;
     setTimeout(() => {
       setShowCards(false);
-    }, 1000);
+      setIsFadingOut(false);
+    }, 2000 + fadeOutDuration);
   };
 
   const handleReset = () => {
@@ -413,6 +423,7 @@ const HexGrid = () => {
     setConnections([]);
     setPapers([]);
     setShowCards(false);
+    setIsFadingOut(false);
     setHoveredPaper(null);
     setArxivInput('');
     setUploadedFile(null);
@@ -748,19 +759,25 @@ const HexGrid = () => {
       {papers.map((paper, idx) => {
         const screenX = viewportSize.width / 2 + paper.hex.x + gridOffset.x;
         const screenY = viewportSize.height / 2 + paper.hex.y + gridOffset.y;
-        // Increased offset to avoid overlapping with hexagon hover area
-        const cardOffset = 120;
+        // All cards to the right
+        const cardOffset = idx % 2 === 120;
         
         const isHovered = hoveredPaper === paper.id;
         
         // Determine visibility state more explicitly
         let cardClass = 'paper-card-hidden';
         let shouldRender = true;
+        let fadeDelay = `${idx * 0.1}s`;
         
         if (isHovered) {
           cardClass = 'paper-card-hovered';
-        } else if (showCards) {
+          fadeDelay = '0s'; // No delay for hover
+        } else if (showCards && !isFadingOut) {
           cardClass = 'paper-card-visible';
+          // Staggered fade-in
+        } else if (showCards && isFadingOut) {
+          cardClass = 'paper-card-fading-out';
+          // Staggered fade-out (same order as fade-in)
         } else {
           // Don't render at all if not showing and not hovered
           shouldRender = false;
@@ -783,7 +800,7 @@ const HexGrid = () => {
               pointerEvents: 'none', // Don't interfere with hexagon hover
               left: screenX + cardOffset,
               top: screenY - 60,
-              animationDelay: `${idx * 0.1}s`
+              animationDelay: fadeDelay
             }}
           >
             <h3 style={{
@@ -1274,6 +1291,12 @@ const HexGrid = () => {
         .paper-card-visible {
           animation: fadeIn 0.5s ease-out forwards;
           opacity: 0;
+          animation-fill-mode: forwards;
+        }
+        
+        .paper-card-fading-out {
+          animation: fadeOutUp 0.6s ease-out forwards;
+          opacity: 1;
           animation-fill-mode: forwards;
         }
         
