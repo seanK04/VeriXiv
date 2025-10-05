@@ -35,6 +35,7 @@ const HexGrid = () => {
   const [showCards, setShowCards] = useState(false);
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [hoveredPaper, setHoveredPaper] = useState(null);
+  const [fadingCards, setFadingCards] = useState(new Set());
   const [gridOffset, setGridOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -142,6 +143,7 @@ const HexGrid = () => {
   // Handle mouse/touch drag with RAF for smooth updates
   const rafRef = useRef(null);
   const hoverTimeoutRef = useRef(null);
+  const fadeTimeoutsRef = useRef(new Map()); // Track fade timeouts per paper ID
   
   const handlePointerDown = (e) => {
     if (modalOpen) return; // Don't allow dragging when modal is open
@@ -238,6 +240,20 @@ const HexGrid = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [modalOpen]);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+      fadeTimeoutsRef.current.forEach(timeouts => {
+        clearTimeout(timeouts.hover);
+        clearTimeout(timeouts.cleanup);
+      });
+      fadeTimeoutsRef.current.clear();
+    };
+  }, []);
 
   // Handle mouse wheel zoom/pan with RAF for smooth updates
   const wheelRafRef = useRef(null);
@@ -419,12 +435,20 @@ const HexGrid = () => {
       clearTimeout(hoverTimeoutRef.current);
     }
     
+    // Clear all fade timeouts
+    fadeTimeoutsRef.current.forEach(timeouts => {
+      clearTimeout(timeouts.hover);
+      clearTimeout(timeouts.cleanup);
+    });
+    fadeTimeoutsRef.current.clear();
+    
     setActiveHexagons([]);
     setConnections([]);
     setPapers([]);
     setShowCards(false);
     setIsFadingOut(false);
     setHoveredPaper(null);
+    setFadingCards(new Set());
     setArxivInput('');
     setUploadedFile(null);
     setFileError('');
@@ -615,15 +639,24 @@ const HexGrid = () => {
                   cursor: isActive ? 'pointer' : 'default'
                 }}
                 onMouseEnter={() => {
-                  // Clear any pending timeout
-                  if (hoverTimeoutRef.current) {
-                    clearTimeout(hoverTimeoutRef.current);
-                  }
-                  
                   if (isActive) {
                     // Find the paper associated with this hexagon
                     const paper = papers.find(p => p.hex.id === hex.id);
                     if (paper) {
+                      // Clear any pending timeouts for this specific paper
+                      const timeouts = fadeTimeoutsRef.current.get(paper.id);
+                      if (timeouts) {
+                        clearTimeout(timeouts.hover);
+                        clearTimeout(timeouts.cleanup);
+                        fadeTimeoutsRef.current.delete(paper.id);
+                      }
+                      
+                      // Remove from fading set if it was fading
+                      setFadingCards(prev => {
+                        const next = new Set(prev);
+                        next.delete(paper.id);
+                        return next;
+                      });
                       setHoveredPaper(paper.id);
                     }
                   } else {
@@ -631,18 +664,49 @@ const HexGrid = () => {
                   }
                 }}
                 onMouseLeave={() => {
-                  // Debounce the mouse leave to prevent jittering
-                  if (hoverTimeoutRef.current) {
-                    clearTimeout(hoverTimeoutRef.current);
-                  }
-                  
-                  hoverTimeoutRef.current = setTimeout(() => {
-                    if (isActive) {
-                      setHoveredPaper(null);
-                    } else {
-                      setHoveredHex(null);
+                  if (isActive) {
+                    const paper = papers.find(p => p.hex.id === hex.id);
+                    if (paper) {
+                      // Clear any existing timeouts for this paper
+                      const existingTimeouts = fadeTimeoutsRef.current.get(paper.id);
+                      if (existingTimeouts) {
+                        clearTimeout(existingTimeouts.hover);
+                        clearTimeout(existingTimeouts.cleanup);
+                      }
+                      
+                      // Immediately add to fading set to keep card rendered
+                      setFadingCards(prev => new Set(prev).add(paper.id));
+                      
+                      // Then clear hovered state after small delay
+                      const hoverTimeout = setTimeout(() => {
+                        setHoveredPaper(prev => prev === paper.id ? null : prev);
+                      }, 50);
+                      
+                      // Remove from fading set after animation completes
+                      const cleanupTimeout = setTimeout(() => {
+                        setFadingCards(prev => {
+                          const next = new Set(prev);
+                          next.delete(paper.id);
+                          return next;
+                        });
+                        fadeTimeoutsRef.current.delete(paper.id);
+                      }, 450); // 50ms delay + 400ms animation
+                      
+                      // Store both timeouts
+                      fadeTimeoutsRef.current.set(paper.id, {
+                        hover: hoverTimeout,
+                        cleanup: cleanupTimeout
+                      });
                     }
-                  }, 50); // 50ms debounce
+                  } else {
+                    // Debounce the mouse leave for white hexagons
+                    if (hoverTimeoutRef.current) {
+                      clearTimeout(hoverTimeoutRef.current);
+                    }
+                    hoverTimeoutRef.current = setTimeout(() => {
+                      setHoveredHex(null);
+                    }, 50);
+                  }
                 }}
               >
                 <polygon
@@ -760,9 +824,10 @@ const HexGrid = () => {
         const screenX = viewportSize.width / 2 + paper.hex.x + gridOffset.x;
         const screenY = viewportSize.height / 2 + paper.hex.y + gridOffset.y;
         // All cards to the right
-        const cardOffset = idx % 2 === 120;
+        const cardOffset = idx % 2 === 0 ? 120 : 140;
         
         const isHovered = hoveredPaper === paper.id;
+        const isFading = fadingCards.has(paper.id);
         
         // Determine visibility state more explicitly
         let cardClass = 'paper-card-hidden';
@@ -772,6 +837,9 @@ const HexGrid = () => {
         if (isHovered) {
           cardClass = 'paper-card-hovered';
           fadeDelay = '0s'; // No delay for hover
+        } else if (isFading) {
+          cardClass = 'paper-card-unhover-fade';
+          fadeDelay = '0s'; // Immediate fade on unhover
         } else if (showCards && !isFadingOut) {
           cardClass = 'paper-card-visible';
           // Staggered fade-in
@@ -779,7 +847,7 @@ const HexGrid = () => {
           cardClass = 'paper-card-fading-out';
           // Staggered fade-out (same order as fade-in)
         } else {
-          // Don't render at all if not showing and not hovered
+          // Don't render at all if not showing, not hovered, and not fading
           shouldRender = false;
         }
         
@@ -1298,6 +1366,10 @@ const HexGrid = () => {
           animation: fadeOutUp 0.6s ease-out forwards;
           opacity: 1;
           animation-fill-mode: forwards;
+        }
+        
+        .paper-card-unhover-fade {
+          animation: fadeOut 0.4s ease-out forwards;
         }
         
         .paper-card-hovered {
