@@ -14,3 +14,4 @@ index_name = "papers-index"
 # Environment variables
 [vars]
 VECTOR_INDEX = "papers-index"
+FLASK_API_URL = "https://photoheliographic-unmorosely-king.ngrok-free.dev"  # Update this with your deployed Flask URL

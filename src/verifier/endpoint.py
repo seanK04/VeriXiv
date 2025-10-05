@@ -131,13 +131,12 @@ def process_arxiv():
         paper_text += page.get_text()
     doc.close()
     
-    # TODO: Send to Cloudflare Workers for embedding and vectorization
-    # For now, return success with paper info
-    
+    # Return extracted text for Worker to use
     return jsonify({
         "paper_id": paper_id,
         "pdf_url": pdf_url,
         "status": "processed",
+        "text": paper_text,
         "text_length": len(paper_text),
         "timestamp": str(datetime.now())
     })
@@ -171,13 +170,12 @@ def upload_pdf():
     # Generate unique ID for uploaded paper
     paper_id = f"uploaded_{hashlib.md5(pdf_bytes).hexdigest()[:12]}"
     
-    # TODO: Send to Cloudflare Workers for embedding and vectorization
-    # For now, return success with paper info
-    
+    # Return extracted text for Worker to use
     return jsonify({
         "paper_id": paper_id,
         "filename": file.filename,
         "status": "processed",
+        "text": paper_text,
         "text_length": len(paper_text),
         "timestamp": str(datetime.now())
     })

@@ -61,8 +61,13 @@ export default {
         return await handleAnalyze(request, env, corsHeaders);
       }
 
+      // Full pipeline orchestrator - coordinates everything
+      if (path === '/api/analyze-full-pipeline' && method === 'POST') {
+        return await handleFullPipeline(request, env, corsHeaders);
+      }
+
       // Default response
-      return new Response('VeriXiv Worker - Available endpoints: /api/health, /api/embed, /api/search, /api/similar, /api/upsert, /api/paper, /api/analyze', { 
+      return new Response('VeriXiv Worker - Available endpoints: /api/health, /api/embed, /api/search, /api/similar, /api/upsert, /api/paper, /api/analyze, /api/analyze-full-pipeline', { 
         status: 404, 
         headers: corsHeaders 
       });
@@ -541,5 +546,203 @@ async function handleAnalyze(request, env, corsHeaders) {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
+  }
+}
+
+// Full pipeline orchestrator - combines all services
+async function handleFullPipeline(request, env, corsHeaders) {
+  try {
+    const { paper_id, paper_text, k = 5 } = await request.json();
+    
+    if (!paper_id && !paper_text) {
+      return new Response(JSON.stringify({ 
+        error: 'Either paper_id or paper_text is required' 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    console.log(`Starting full pipeline analysis for paper: ${paper_id || 'uploaded PDF'}`);
+    
+    // STEP 1: Extract paper text (if arXiv paper)
+    let extractedText = paper_text;
+    
+    if (paper_id && !paper_text) {
+      console.log('Calling Flask to extract paper text...');
+      
+      const extractResponse = await fetch(`${env.FLASK_API_URL}/process-arxiv`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paper_id })
+      });
+      
+      if (!extractResponse.ok) {
+        const errorData = await extractResponse.json();
+        return new Response(JSON.stringify({ 
+          error: 'Failed to extract paper text',
+          details: errorData.error
+        }), {
+          status: extractResponse.status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      const extractData = await extractResponse.json();
+      extractedText = extractData.text || '';
+    }
+    
+    // Take first 400 words for embedding (token limit consideration)
+    const paperExcerpt = extractedText.split(/\s+/).slice(0, 400).join(' ');
+    
+    if (!paperExcerpt) {
+      return new Response(JSON.stringify({ 
+        error: 'No text extracted from paper' 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    // STEP 2: Find similar papers using existing logic
+    console.log('Finding similar papers in Vectorize...');
+    const similarPapers = await findSimilarPapers(paperExcerpt, k, env);
+    
+    if (similarPapers.length === 0) {
+      return new Response(JSON.stringify({ 
+        error: 'No similar papers found in database',
+        suggestion: 'Try with a different paper or increase k value'
+      }), {
+        status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    console.log(`Found ${similarPapers.length} similar papers`);
+    
+    // STEP 3: Score each similar paper via Flask
+    console.log('Scoring papers with Gemini...');
+    const scoringPromises = similarPapers.map(async (paper) => {
+      try {
+        const scoreResponse = await fetch(`${env.FLASK_API_URL}/score`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paper_id: paper.id.replace('arxiv:', ''),
+            pdf_url: paper.pdf_url
+          })
+        });
+        
+        if (!scoreResponse.ok) {
+          console.warn(`Failed to score paper ${paper.id}: ${scoreResponse.status}`);
+          return null;
+        }
+        
+        const scoreData = await scoreResponse.json();
+        
+        return {
+          ...paper,
+          rubric_score: scoreData.graded_rubric_score || 0,
+          rubric_details: scoreData.graded_rubric || {},
+          assessment: scoreData.graded_rubric?.Assessment || 'No assessment available'
+        };
+      } catch (error) {
+        console.error(`Error scoring paper ${paper.id}:`, error.message);
+        return null;
+      }
+    });
+    
+    // Execute all scoring in parallel
+    const scoredPapers = (await Promise.all(scoringPromises)).filter(p => p !== null);
+    
+    if (scoredPapers.length === 0) {
+      return new Response(JSON.stringify({ 
+        error: 'Failed to score any papers',
+        details: 'All scoring requests failed. Check Flask service availability.'
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    console.log(`Successfully scored ${scoredPapers.length} papers`);
+    
+    // STEP 4: Return aggregated results
+    return new Response(JSON.stringify({
+      success: true,
+      analyzed_paper_id: paper_id || 'uploaded',
+      similar_papers: scoredPapers.map(p => ({
+        id: p.id,
+        title: p.title,
+        authors: p.authors,
+        similarity_score: p.similarity_score,
+        reproducibility_score: Math.round(p.rubric_score * 100), // Convert to 0-100
+        data_available: p.rubric_details?.['Data Download'] !== 'Not Present',
+        code_available: p.rubric_details?.['Link to Code'] !== 'Not Present',
+        rubric_breakdown: p.rubric_details,
+        assessment: p.assessment,
+        abstract: p.abstract
+      })),
+      total_analyzed: scoredPapers.length,
+      timestamp: new Date().toISOString()
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    console.error('Full pipeline error:', error);
+    return new Response(JSON.stringify({ 
+      error: 'Pipeline failed',
+      message: error.message,
+      stack: error.stack
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// Helper function to find similar papers (reuses existing logic)
+async function findSimilarPapers(text, topK, env) {
+  try {
+    // Generate embedding using Workers AI
+    const aiResponse = await env.AI.run('@cf/baai/bge-base-en-v1.5', {
+      text: [text]
+    });
+    
+    if (!aiResponse || !aiResponse.data || !Array.isArray(aiResponse.data)) {
+      throw new Error('Failed to generate embedding');
+    }
+    
+    const queryVector = aiResponse.data[0];
+    
+    // Search in Vectorize
+    const vectorizeResponse = await env.VEC.query(
+      Float32Array.from(queryVector),
+      { 
+        topK: Math.min(topK, 20), // Cap at 20 results
+        returnValues: false,
+        returnMetadata: true
+      }
+    );
+    
+    if (!vectorizeResponse || !vectorizeResponse.matches) {
+      throw new Error('Vector search failed');
+    }
+    
+    // Format and return results
+    return vectorizeResponse.matches.map(match => ({
+      id: match.id,
+      title: match.metadata?.title || 'Untitled',
+      authors: match.metadata?.authors || [],
+      categories: match.metadata?.categories || [],
+      published: match.metadata?.published || '',
+      similarity_score: match.score,
+      abstract: match.metadata?.abstract || '',
+      pdf_url: match.metadata?.pdf_url || `https://arxiv.org/pdf/${match.id.replace('arxiv:', '')}.pdf`
+    }));
+  } catch (error) {
+    console.error('Error finding similar papers:', error);
+    throw error;
   }
 }

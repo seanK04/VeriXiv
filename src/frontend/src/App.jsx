@@ -370,8 +370,6 @@ const HexGrid = () => {
       }
       
       console.log('Processing arXiv paper:', paperId);
-      // TODO: Call backend API for arXiv paper
-      // const pdfUrl = `https://arxiv.org/pdf/${paperId}.pdf`;
       
     } else {
       // Handle PDF upload
@@ -381,58 +379,93 @@ const HexGrid = () => {
       }
       
       console.log('Uploading PDF:', uploadedFile.name);
-      // TODO: Call backend API for PDF upload
-      paperId = 'uploaded_' + Date.now();
+      // TODO: Implement PDF upload flow
+      alert('PDF upload will be implemented - for now, please use an arXiv ID');
+      return;
     }
     
     setLoading(true);
     setModalOpen(false);
     
-    // Select scattered hexagons across the grid
-    const nearby = scatterHexagons(visibleHexagons, Math.min(kValue, 12));
-    
-    // Animate hexagons turning yellow
-    for (let i = 0; i < nearby.length; i++) {
-      await new Promise(resolve => setTimeout(resolve, 150));
-      setActiveHexagons(prev => [...prev, nearby[i]]);
-    }
-    
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Generate mock paper data
-    const mockPapers = nearby.map((hex, idx) => ({
-      id: `paper-${idx}`,
-      title: `Related Paper ${idx + 1}: Deep Learning Reproducibility Study`,
-      score: Math.floor(Math.random() * 30 + 70),
-      dataAvailable: Math.random() > 0.3,
-      codeAvailable: Math.random() > 0.4,
-      replications: Math.floor(Math.random() * 15 + 1),
-      hex
-    }));
-    
-    setPapers(mockPapers);
-    setConnections(nearby);
-    setShowCards(true); // Show cards initially
-    setIsFadingOut(false); // Reset fade-out state
-    setLoading(false);
-    
-    // Start fade out after 2 seconds
-    setTimeout(() => {
-      setIsFadingOut(true);
-    }, 2000);
-    
-    // Hide cards completely after fade-out animation completes
-    // Cards fade out in staggered fashion (0.1s per card) + 0.6s animation duration
-    const fadeOutDuration = (mockPapers.length * 0.1 + 0.6) * 1000;
-    setTimeout(() => {
-      setShowCards(false);
-      setIsFadingOut(false);
-      // Show hint after cards fade out (only if not previously dismissed)
-      if (!hintDismissed) {
-        setHintVisible(true);
+    try {
+      // Call the orchestrator endpoint
+      const WORKER_URL = import.meta.env.VITE_WORKER_URL || 'http://localhost:8787';
+      
+      console.log('Calling Worker API at:', WORKER_URL);
+      
+      const response = await fetch(`${WORKER_URL}/api/analyze-full-pipeline`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paper_id: paperId,
+          k: kValue
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
       }
-    }, 2000 + fadeOutDuration);
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Analysis failed');
+      }
+      
+      console.log(`Received ${data.similar_papers.length} analyzed papers`);
+      
+      // Select scattered hexagons across the grid
+      const nearby = scatterHexagons(visibleHexagons, Math.min(data.similar_papers.length, 12));
+      
+      // Animate hexagons turning on
+      for (let i = 0; i < nearby.length; i++) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+        setActiveHexagons(prev => [...prev, nearby[i]]);
+      }
+      
+      // Map API data to paper format
+      const mappedPapers = data.similar_papers.map((paper, idx) => ({
+        id: paper.id,
+        title: paper.title,
+        score: paper.reproducibility_score, // Already 0-100
+        dataAvailable: paper.data_available,
+        codeAvailable: paper.code_available,
+        replications: Math.round(paper.similarity_score * 100), // Convert similarity to percentage
+        rubricBreakdown: paper.rubric_breakdown,
+        assessment: paper.assessment,
+        hex: nearby[idx]
+      }));
+      
+      setPapers(mappedPapers);
+      setConnections(nearby);
+      setShowCards(true); // Show cards initially
+      setIsFadingOut(false); // Reset fade-out state
+      setLoading(false);
+      
+      // Start fade out after 2 seconds
+      setTimeout(() => {
+        setIsFadingOut(true);
+      }, 2000);
+      
+      // Hide cards completely after fade-out animation completes
+      // Cards fade out in staggered fashion (0.1s per card) + 0.6s animation duration
+      const fadeOutDuration = (mappedPapers.length * 0.1 + 0.6) * 1000;
+      setTimeout(() => {
+        setShowCards(false);
+        setIsFadingOut(false);
+        // Show hint after cards fade out (only if not previously dismissed)
+        if (!hintDismissed) {
+          setHintVisible(true);
+        }
+      }, 2000 + fadeOutDuration);
+      
+    } catch (error) {
+      console.error('Analysis error:', error);
+      alert(`Failed to analyze paper: ${error.message}\n\nPlease make sure:\n1. Flask backend is running on port 1919\n2. Worker is deployed or running locally\n3. The arXiv ID is valid`);
+      setLoading(false);
+      setModalOpen(true); // Reopen modal so user can try again
+    }
   };
 
   const handleReset = () => {
