@@ -56,6 +56,15 @@ const HexGrid = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Cleanup hover timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Create hexagon path (flat-top orientation for honeycomb)
   const createHexPath = (x, y, size) => {
     const points = [];
@@ -131,6 +140,7 @@ const HexGrid = () => {
 
   // Handle mouse/touch drag with RAF for smooth updates
   const rafRef = useRef(null);
+  const hoverTimeoutRef = useRef(null);
   
   const handlePointerDown = (e) => {
     if (modalOpen) return; // Don't allow dragging when modal is open
@@ -394,6 +404,11 @@ const HexGrid = () => {
   };
 
   const handleReset = () => {
+    // Clear any pending hover timeouts
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    
     setActiveHexagons([]);
     setConnections([]);
     setPapers([]);
@@ -589,20 +604,34 @@ const HexGrid = () => {
                   cursor: isActive ? 'pointer' : 'default'
                 }}
                 onMouseEnter={() => {
+                  // Clear any pending timeout
+                  if (hoverTimeoutRef.current) {
+                    clearTimeout(hoverTimeoutRef.current);
+                  }
+                  
                   if (isActive) {
                     // Find the paper associated with this hexagon
                     const paper = papers.find(p => p.hex.id === hex.id);
-                    if (paper) setHoveredPaper(paper.id);
+                    if (paper) {
+                      setHoveredPaper(paper.id);
+                    }
                   } else {
                     setHoveredHex(hex.id);
                   }
                 }}
                 onMouseLeave={() => {
-                  if (isActive) {
-                    setHoveredPaper(null);
-                  } else {
-                    setHoveredHex(null);
+                  // Debounce the mouse leave to prevent jittering
+                  if (hoverTimeoutRef.current) {
+                    clearTimeout(hoverTimeoutRef.current);
                   }
+                  
+                  hoverTimeoutRef.current = setTimeout(() => {
+                    if (isActive) {
+                      setHoveredPaper(null);
+                    } else {
+                      setHoveredHex(null);
+                    }
+                  }, 50); // 50ms debounce
                 }}
               >
                 <polygon
@@ -719,29 +748,30 @@ const HexGrid = () => {
       {papers.map((paper, idx) => {
         const screenX = viewportSize.width / 2 + paper.hex.x + gridOffset.x;
         const screenY = viewportSize.height / 2 + paper.hex.y + gridOffset.y;
-        const cardOffset = idx % 2 === 0 ? 80 : -80;
+        // Increased offset to avoid overlapping with hexagon hover area
+        const cardOffset = 120;
         
         const isHovered = hoveredPaper === paper.id;
-        const shouldRender = showCards || isHovered || papers.length > 0;
         
-        if (!shouldRender && !showCards) return null;
+        // Determine visibility state more explicitly
+        let cardClass = 'paper-card-hidden';
+        let shouldRender = true;
         
-        // Determine animation state
-        let animationStyle;
         if (isHovered) {
-          // Quick fade in on hover
-          animationStyle = 'fadeIn 0.2s ease-out forwards';
+          cardClass = 'paper-card-hovered';
         } else if (showCards) {
-          // Initial staggered fade in
-          animationStyle = `fadeIn 0.5s ease-out ${idx * 0.1}s forwards`;
+          cardClass = 'paper-card-visible';
         } else {
-          // Natural fade out with slight upward movement
-          animationStyle = `fadeOutUp 0.6s ease-out forwards`;
+          // Don't render at all if not showing and not hovered
+          shouldRender = false;
         }
+        
+        if (!shouldRender) return null;
         
         return (
           <div
             key={paper.id}
+            className={cardClass}
             style={{
               position: 'absolute',
               backgroundColor: 'white',
@@ -750,11 +780,10 @@ const HexGrid = () => {
               padding: '16px',
               width: '256px',
               zIndex: 10,
-              pointerEvents: isHovered ? 'auto' : 'none',
+              pointerEvents: 'none', // Don't interfere with hexagon hover
               left: screenX + cardOffset,
               top: screenY - 60,
-              animation: animationStyle,
-              opacity: showCards || isHovered ? 1 : 0
+              animationDelay: `${idx * 0.1}s`
             }}
           >
             <h3 style={{
@@ -1208,11 +1237,13 @@ const HexGrid = () => {
         /* Yellow hexagon hover effects */
         .hex-yellow {
           cursor: pointer;
-          transition: transform 0.2s ease-out, filter 0.2s ease-out;
         }
         
-        .hex-yellow:hover {
-          transform: scale(1.15);
+        .hex-yellow polygon {
+          transition: filter 0.2s ease-out;
+        }
+        
+        .hex-yellow:hover polygon {
           filter: brightness(1.1) drop-shadow(0 0 8px rgba(234, 179, 8, 0.4));
         }
         
@@ -1237,6 +1268,19 @@ const HexGrid = () => {
             opacity: 0; 
             transform: translateY(-20px);
           }
+        }
+        
+        /* Paper card states */
+        .paper-card-visible {
+          animation: fadeIn 0.5s ease-out forwards;
+          opacity: 0;
+          animation-fill-mode: forwards;
+        }
+        
+        .paper-card-hovered {
+          animation: none;
+          opacity: 1;
+          transition: opacity 0.2s ease-out;
         }
       `}</style>
     </div>
