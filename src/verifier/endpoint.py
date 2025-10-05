@@ -291,10 +291,34 @@ def upload_pdf():
     # Generate unique ID for uploaded paper
     paper_id = f"uploaded_{hashlib.md5(pdf_bytes).hexdigest()[:12]}"
     
-    # Return extracted text for Worker to use
+    # Extract title and abstract from the paper text
+    # Title is typically in the first few lines
+    lines = [line.strip() for line in paper_text.split('\n') if line.strip()]
+    title = lines[0] if lines else file.filename
+    
+    # Abstract is typically after "Abstract" keyword
+    abstract = ""
+    abstract_start = -1
+    for i, line in enumerate(lines):
+        if 'abstract' in line.lower():
+            abstract_start = i + 1
+            break
+    
+    if abstract_start > 0 and abstract_start < len(lines):
+        # Take next few lines as abstract (up to 10 lines or until we hit "Introduction")
+        abstract_lines = []
+        for i in range(abstract_start, min(abstract_start + 10, len(lines))):
+            if 'introduction' in lines[i].lower() or lines[i].startswith('1.') or lines[i].startswith('I.'):
+                break
+            abstract_lines.append(lines[i])
+        abstract = ' '.join(abstract_lines)
+    
+    # Return extracted text with title and abstract for Worker to use
     return jsonify({
         "paper_id": paper_id,
         "filename": file.filename,
+        "title": title,
+        "abstract": abstract if abstract else "No abstract found",
         "status": "processed",
         "text": paper_text,
         "text_length": len(paper_text),
