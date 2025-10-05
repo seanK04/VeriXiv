@@ -937,7 +937,7 @@ const HexGrid = () => {
             color: 'white',
             margin: 0,
             letterSpacing: '-0.02em'
-          }}>VeriXiv</h1>
+          }}>veriXiv</h1>
           </div>
         
         {/* Grey subtitle bar */}
@@ -1301,7 +1301,7 @@ const HexGrid = () => {
       {hintVisible && papers.length > 0 && (
         <div style={{
           position: 'absolute',
-          bottom: '80px',
+          bottom: '16px',
           left: '16px',
           backgroundColor: 'rgba(234, 179, 8, 0.95)',
           color: 'white',
@@ -1885,6 +1885,47 @@ const HexGrid = () => {
                   Reproducibility Score
                 </div>
               </div>
+              
+              {/* Show comparison for uploaded papers */}
+              {selectedPaper.isUploadedPaper && (() => {
+                // Find all similar papers in the same query
+                const similarPapers = papers.filter(p => 
+                  p.queryId === selectedPaper.queryId && !p.isUploadedPaper
+                );
+                
+                if (similarPapers.length > 0) {
+                  const avgScore = Math.round(
+                    similarPapers.reduce((sum, p) => sum + p.score, 0) / similarPapers.length
+                  );
+                  const k = similarPapers.length;
+                  
+                  return (
+                    <div style={{
+                      marginTop: '16px',
+                      paddingTop: '16px',
+                      borderTop: '1px solid #e5e7eb',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px'
+                    }}>
+                      <div style={{
+                        fontSize: '1.5rem',
+                        fontWeight: 700,
+                        color: getScoreColor(avgScore)
+                      }}>
+                        {avgScore}%
+                      </div>
+                      <div style={{
+                        fontSize: '0.875rem',
+                        color: '#6b7280'
+                      }}>
+                        Avg. of Top {k} Similar Papers
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
 
             {/* Rubric Items */}
@@ -1988,7 +2029,7 @@ const HexGrid = () => {
                           left: '50%',
                           top: '50%',
                           transform: 'translate(-50%, -50%)',
-                          backgroundColor: '#1f2937',
+                          backgroundColor: 'rgba(31, 41, 55, 0.70)',
                           color: 'white',
                           padding: '12px 16px',
                           borderRadius: '6px',
