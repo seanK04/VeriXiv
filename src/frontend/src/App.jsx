@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, X, FileText, Database, Link2, CheckCircle, Loader } from 'lucide-react';
+import { Plus, X, FileText, Database, Link2, CheckCircle, Loader, Cpu, Code, Server, TrendingUp, BarChart, Sliders, Circle, Minus } from 'lucide-react';
 import './App.css';
 
 // Helper function to parse arXiv URLs/IDs
@@ -44,6 +44,7 @@ const HexGrid = () => {
   const [autoScroll, setAutoScroll] = useState(true);
   const [hoveredHex, setHoveredHex] = useState(null);
   const [viewportSize, setViewportSize] = useState({ width: window.innerWidth, height: window.innerHeight });
+  const [selectedPaper, setSelectedPaper] = useState(null);
 
   // Hexagon dimensions
   const hexSize = 60;
@@ -124,7 +125,7 @@ const HexGrid = () => {
 
   // Animate grid panning
   useEffect(() => {
-    if (!autoScroll || modalOpen) return; // Don't auto-scroll when modal is open
+    if (!autoScroll || modalOpen || selectedPaper) return; // Don't auto-scroll when modal or popup is open
     
     let animationFrame;
     let time = 0;
@@ -140,7 +141,7 @@ const HexGrid = () => {
     
     animationFrame = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animationFrame);
-  }, [autoScroll, modalOpen]);
+  }, [autoScroll, modalOpen, selectedPaper]);
 
   // Handle mouse/touch drag with RAF for smooth updates
   const rafRef = useRef(null);
@@ -148,7 +149,7 @@ const HexGrid = () => {
   const fadeTimeoutsRef = useRef(new Map()); // Track fade timeouts per paper ID
   
   const handlePointerDown = (e) => {
-    if (modalOpen) return; // Don't allow dragging when modal is open
+    if (modalOpen || selectedPaper) return; // Don't allow dragging when modal or popup is open
     setIsDragging(true);
     setAutoScroll(false);
     setDragStart({
@@ -158,7 +159,7 @@ const HexGrid = () => {
   };
 
   const handlePointerMove = (e) => {
-    if (!isDragging || modalOpen) return; // Don't allow dragging when modal is open
+    if (!isDragging || modalOpen || selectedPaper) return; // Don't allow dragging when modal or popup is open
     
     // Cancel any pending animation frame
     if (rafRef.current) {
@@ -181,9 +182,9 @@ const HexGrid = () => {
     }
   };
 
-  // Stop dragging when modal opens
+  // Stop dragging when modal or popup opens
   useEffect(() => {
-    if (modalOpen) {
+    if (modalOpen || selectedPaper) {
       setIsDragging(false);
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
@@ -192,13 +193,22 @@ const HexGrid = () => {
         cancelAnimationFrame(wheelRafRef.current);
       }
     }
-  }, [modalOpen]);
+  }, [modalOpen, selectedPaper]);
 
   // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Handle ESC key for closing popup
+      if (e.key === 'Escape') {
+        if (selectedPaper) {
+          e.preventDefault();
+          setSelectedPaper(null);
+          return;
+        }
+      }
+      
       // Don't process shortcuts when modal is open (user may be typing)
-      if (modalOpen) return;
+      if (modalOpen || selectedPaper) return;
       
       const step = e.shiftKey ? 50 : 20;
       setAutoScroll(false);
@@ -241,7 +251,7 @@ const HexGrid = () => {
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [modalOpen]);
+  }, [modalOpen, selectedPaper]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -261,7 +271,7 @@ const HexGrid = () => {
   const wheelRafRef = useRef(null);
   
   const handleWheel = (e) => {
-    if (modalOpen) return; // Don't allow scrolling when modal is open
+    if (modalOpen || selectedPaper) return; // Don't allow scrolling when modal or popup is open
     e.preventDefault();
     setAutoScroll(false);
     
@@ -619,6 +629,73 @@ const HexGrid = () => {
     return '#d1d5db';
   };
 
+  // Rubric fields in order
+  const RUBRIC_FIELDS = [
+    "Model Description",
+    "Link to Code",
+    "Infrastructure",
+    "Runtime",
+    "Parameters",
+    "Validation Performance",
+    "Metrics",
+    "Number of Training/Eval Runs",
+    "Hyperparameter Bounds",
+    "Hyperparameter Best Config",
+    "Hyperparameter Search",
+    "Hyperparameter Method",
+    "Expected Performance",
+    "Data Statistics",
+    "Data Split",
+    "Data Processing",
+    "Data Download",
+    "New Data Description",
+    "Data Languages"
+  ];
+
+  // Get icon for rubric field
+  const getRubricIcon = (field) => {
+    const iconProps = { size: 18, strokeWidth: 2 };
+    
+    if (field.includes("Model") || field.includes("Parameters")) {
+      return <Cpu {...iconProps} />;
+    } else if (field.includes("Code") || field.includes("Link")) {
+      return <Code {...iconProps} />;
+    } else if (field.includes("Infrastructure") || field.includes("Runtime")) {
+      return <Server {...iconProps} />;
+    } else if (field.includes("Performance") || field.includes("Metrics") || field.includes("Expected")) {
+      return <TrendingUp {...iconProps} />;
+    } else if (field.includes("Hyperparameter")) {
+      return <Sliders {...iconProps} />;
+    } else if (field.includes("Data") || field.includes("Dataset")) {
+      return <Database {...iconProps} />;
+    } else {
+      return <BarChart {...iconProps} />;
+    }
+  };
+
+  // Get status icon for grade
+  const getGradeIcon = (grade) => {
+    const iconSize = 20;
+    
+    if (grade === "Complete") {
+      return <Circle size={iconSize} fill="currentColor" strokeWidth={0} style={{ color: '#10b981' }} />;
+    } else if (grade === "Partial") {
+      // Semi-circle filled from left
+      return (
+        <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" style={{ color: '#f59e0b' }}>
+          <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2" />
+          <path d="M 12 2 A 10 10 0 0 1 12 22 Z" fill="currentColor" />
+        </svg>
+      );
+    } else if (grade === "Not Present") {
+      return <Circle size={iconSize} fill="none" stroke="currentColor" strokeWidth={2} style={{ color: '#ef4444' }} />;
+    } else if (grade === "Not Applicable") {
+      return <Minus size={iconSize} strokeWidth={2} style={{ color: '#9ca3af' }} />;
+    }
+    
+    return <Minus size={iconSize} strokeWidth={2} style={{ color: '#9ca3af' }} />;
+  };
+
   return (
     <div
       className="relative bg-gray-50 overflow-hidden"
@@ -790,6 +867,20 @@ const HexGrid = () => {
                   pointerEvents: 'auto',
                   transformOrigin: 'center',
                   cursor: isActive ? 'pointer' : 'default'
+                }}
+                onClick={(e) => {
+                  if (isActive) {
+                    e.stopPropagation();
+                    const paper = papers.find(p => p.hex.id === hex.id);
+                    if (paper) {
+                      setSelectedPaper(paper);
+                    }
+                  }
+                }}
+                onMouseDown={(e) => {
+                  if (isActive) {
+                    e.stopPropagation();
+                  }
                 }}
                 onMouseEnter={() => {
                   if (isActive) {
@@ -1078,8 +1169,7 @@ const HexGrid = () => {
 
             <div style={{
               display: 'flex',
-              alignItems: 'center',
-              marginBottom: '12px'
+              alignItems: 'center'
             }}>
               <div style={{
                 fontSize: '1.875rem',
@@ -1091,72 +1181,6 @@ const HexGrid = () => {
                 fontSize: '0.75rem',
                 color: '#6b7280'
               }}>Reproducibility Score</div>
-            </div>
-
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-              fontSize: '0.75rem'
-            }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  color: '#374151'
-                }}>
-                  <Database size={14} style={{ marginRight: '6px' }} />
-                  <span>Dataset</span>
-                </div>
-                {paper.dataAvailable ? (
-                  <CheckCircle size={14} style={{ color: '#10b981' }} />
-                ) : (
-                  <X size={14} style={{ color: '#f87171' }} />
-                )}
-              </div>
-
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  color: '#374151'
-                }}>
-                  <FileText size={14} style={{ marginRight: '6px' }} />
-                  <span>Code</span>
-                </div>
-                {paper.codeAvailable ? (
-                  <CheckCircle size={14} style={{ color: '#10b981' }} />
-                ) : (
-                  <X size={14} style={{ color: '#f87171' }} />
-                )}
-              </div>
-
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  color: '#374151'
-                }}>
-                  <Link2 size={14} style={{ marginRight: '6px' }} />
-                  <span>Replications</span>
-                </div>
-                <span style={{
-                  fontWeight: 600,
-                  color: '#111827'
-                }}>{paper.replications}</span>
-              </div>
             </div>
           </div>
         );
@@ -1477,6 +1501,160 @@ const HexGrid = () => {
         </div>
       )}
 
+      {/* Rubric Popup Modal */}
+      {selectedPaper && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 50,
+            pointerEvents: 'auto',
+            animation: 'fadeIn 0.2s ease-out'
+          }}
+          onClick={() => setSelectedPaper(null)}
+        >
+          <div 
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '12px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              padding: '32px',
+              maxWidth: '600px',
+              width: '90%',
+              maxHeight: '85vh',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              animation: 'popupScale 0.3s ease-out',
+              margin: '16px'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ marginBottom: '24px' }}>
+              <h2 style={{
+                fontSize: '1.25rem',
+                fontWeight: 600,
+                color: '#111827',
+                marginBottom: '12px',
+                lineHeight: 1.4
+              }}>
+                {selectedPaper.title}
+              </h2>
+              
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px'
+              }}>
+                <div style={{
+                  fontSize: '2rem',
+                  fontWeight: 700,
+                  color: getScoreColor(selectedPaper.score)
+                }}>
+                  {selectedPaper.score}%
+                </div>
+                <div style={{
+                  fontSize: '0.875rem',
+                  color: '#6b7280'
+                }}>
+                  Reproducibility Score
+                </div>
+              </div>
+            </div>
+
+            {/* Rubric Items */}
+            <div style={{
+              flex: 1,
+              overflowY: 'auto',
+              marginRight: '-8px',
+              paddingRight: '8px'
+            }}>
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                {RUBRIC_FIELDS.map((field, idx) => {
+                  const grade = selectedPaper.rubricBreakdown?.[field] || "Not Present";
+                  
+                  return (
+                    <div
+                      key={field}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        padding: '12px 16px',
+                        backgroundColor: idx % 2 === 0 ? '#f9fafb' : '#ffffff',
+                        borderRadius: '6px',
+                        transition: 'background-color 0.15s',
+                        cursor: 'default'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#f3f4f6';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#f9fafb' : '#ffffff';
+                      }}
+                    >
+                      {/* Category Icon */}
+                      <div style={{
+                        color: '#6b7280',
+                        marginRight: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        flexShrink: 0
+                      }}>
+                        {getRubricIcon(field)}
+                      </div>
+
+                      {/* Field Name */}
+                      <div style={{
+                        flex: 1,
+                        fontSize: '0.875rem',
+                        color: '#374151',
+                        fontWeight: 500
+                      }}>
+                        {field}
+                      </div>
+
+                      {/* Grade Status Icon */}
+                      <div style={{
+                        marginLeft: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        flexShrink: 0
+                      }}>
+                        {getGradeIcon(grade)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Close hint */}
+            <div style={{
+              marginTop: '20px',
+              paddingTop: '16px',
+              borderTop: '1px solid #e5e7eb',
+              fontSize: '0.75rem',
+              color: '#9ca3af',
+              textAlign: 'center'
+            }}>
+              Click anywhere or press ESC to close
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CSS Animations */}
       <style>{`
         @keyframes rotateHex {
@@ -1488,6 +1666,17 @@ const HexGrid = () => {
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes popupScale {
+          from { 
+            opacity: 0; 
+            transform: scale(0.9) translateY(20px); 
+          }
+          to { 
+            opacity: 1; 
+            transform: scale(1) translateY(0); 
+          }
         }
 
         @keyframes drawLine {
