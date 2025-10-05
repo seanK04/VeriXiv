@@ -1,6 +1,7 @@
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import os
 
@@ -39,3 +40,32 @@ def score(paper_text: str, model_name: str) -> dict[str, str]:
     print(f"Errors: {result['errors']}")
 
     return result
+
+def score_pages_concurrently(pages_text, model_name, max_workers=4):
+    """
+    Run score_paper() for each page concurrently using threads.
+    Preserves original page order.
+    """
+    from score import score as score_paper  # local import to avoid circular deps
+
+    results = []
+    future_to_page = {}
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for i, page_text in enumerate(pages_text):
+            future = executor.submit(score_paper, page_text, model_name)
+            future_to_page[future] = i  # map the Future -> page index
+
+        for future in as_completed(future_to_page):
+            i = future_to_page[future]  # retrieve the page index
+            try:
+                result = future.result()
+                results.append((i, result))
+            except Exception as e:
+                print(f"Error scoring page {i}: {e}")
+                results.append((i, None))
+
+    # Sort results back to original order
+    results.sort(key=lambda x: x[0])
+    # Return only the results (not indices)
+    return [r for _, r in results]
