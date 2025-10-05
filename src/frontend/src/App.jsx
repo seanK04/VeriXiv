@@ -435,18 +435,15 @@ const HexGrid = () => {
             />
           ))}
           
-          {/* Hexagons */}
-          {visibleHexagons.map((hex) => {
-            const isCenter = isCenterHex(hex);
+          {/* Hexagons - non-center first */}
+          {visibleHexagons.filter(hex => !isCenterHex(hex)).map((hex) => {
             const isActive = isActiveHex(hex);
             
             return (
               <g
                 key={hex.id}
                 transform={`translate(${hex.x}, ${hex.y})`}
-                className={isCenter ? 'hex-hover' : 'hex-normal'}
-                onClick={isCenter ? () => setModalOpen(true) : undefined}
-                onMouseDown={(e) => isCenter && e.stopPropagation()}
+                className='hex-normal'
                 style={{ 
                   pointerEvents: 'auto',
                   transformOrigin: 'center'
@@ -454,22 +451,50 @@ const HexGrid = () => {
               >
                 <polygon
                   points={createHexPath(0, 0, hexSize)}
-                  fill={hoveredHex === hex.id && !isCenter && !isActive ? '#f3f4f6' : getHexColor(hex)}
+                  fill={hoveredHex === hex.id && !isActive ? '#f3f4f6' : getHexColor(hex)}
                   stroke={getHexStroke(hex)}
-                  strokeWidth={isCenter || isActive ? "1.5" : "1"}
-                  filter={isCenter ? "url(#shadow)" : undefined}  // Only apply shadow to center hex
+                  strokeWidth={isActive ? "1.5" : "1"}
                   style={{
                     animation: isActive ? 'rotateHex 0.6s ease-out' : undefined,
                     transition: 'fill 0.15s ease-out'
                   }}
-                  onMouseEnter={() => !isCenter && !isActive && setHoveredHex(hex.id)}
+                  onMouseEnter={() => !isActive && setHoveredHex(hex.id)}
                   onMouseLeave={() => setHoveredHex(null)}
                 />
-                {isCenter && (
-                  <g transform="translate(-16, -16)" style={{ pointerEvents: 'none' }}>
-                    <Plus size={32} stroke="#f59e0b" strokeWidth={2.5} />
-                  </g>
-                )}
+              </g>
+            );
+          })}
+          
+          {/* Center hexagon - render last so it's on top */}
+          {visibleHexagons.filter(hex => isCenterHex(hex)).map((hex) => {
+            const isActive = isActiveHex(hex);
+            
+            return (
+              <g
+                key={hex.id}
+                transform={`translate(${hex.x}, ${hex.y})`}
+                className='hex-hover'
+                onClick={() => setModalOpen(true)}
+                onMouseDown={(e) => e.stopPropagation()}
+                style={{ 
+                  pointerEvents: 'auto',
+                  transformOrigin: 'center'
+                }}
+              >
+                <polygon
+                  points={createHexPath(0, 0, hexSize)}
+                  fill={getHexColor(hex)}
+                  stroke={getHexStroke(hex)}
+                  strokeWidth="1.5"
+                  filter="url(#shadow)"
+                  style={{
+                    animation: isActive ? 'rotateHex 0.6s ease-out' : undefined,
+                    transition: 'fill 0.15s ease-out'
+                  }}
+                />
+                <g transform="translate(-16, -16)" style={{ pointerEvents: 'none' }}>
+                  <Plus size={32} stroke="#f59e0b" strokeWidth={2.5} />
+                </g>
               </g>
             );
           })}
@@ -804,13 +829,14 @@ const HexGrid = () => {
         
         /* Performant CSS hover effect for hexagons */
         .hex-hover {
-          transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+          transition: transform 0.2s ease-out;
           cursor: pointer;
+          transform-origin: center center;
+          transform-box: fill-box;
         }
         
         .hex-hover:hover {
-          transform: scale(1.05);
-          opacity: 0.9;
+          transform: scale(1.3);
         }
         
         /* Cursor style for hexagons */
