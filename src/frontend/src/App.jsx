@@ -525,8 +525,9 @@ const HexGrid = () => {
   const handleSubmit = async () => {
     let paperId;
     let paperText = null;
+    let uploadData = null;
     const WORKER_URL = import.meta.env.VITE_WORKER_URL || 'http://localhost:8787';
-    const FLASK_URL = import.meta.env.VITE_FLASK_URL || 'http://localhost:1919';
+    const FLASK_URL = import.meta.env.VITE_FLASK_URL || 'http://localhost:8080';
     
     setLoading(true);
     setModalOpen(false);
@@ -554,26 +555,38 @@ const HexGrid = () => {
         }
         
         console.log('Uploading PDF:', uploadedFile.name);
+        console.log('Flask URL:', FLASK_URL);
         
         // Step 1: Upload PDF to Flask for text extraction
         const formData = new FormData();
         formData.append('file', uploadedFile);
+        
+        console.log('Sending PDF to:', `${FLASK_URL}/upload-pdf`);
         
         const uploadResponse = await fetch(`${FLASK_URL}/upload-pdf`, {
           method: 'POST',
           body: formData
         });
         
+        console.log('Upload response status:', uploadResponse.status);
+        
         if (!uploadResponse.ok) {
-          const errorData = await uploadResponse.json();
-          throw new Error(errorData.error || 'Failed to upload PDF');
+          let errorMessage = 'Failed to upload PDF';
+          try {
+            const errorData = await uploadResponse.json();
+            errorMessage = errorData.error || errorMessage;
+          } catch (e) {
+            errorMessage = `HTTP ${uploadResponse.status}: ${uploadResponse.statusText}`;
+          }
+          throw new Error(errorMessage);
         }
         
-        const uploadData = await uploadResponse.json();
+        uploadData = await uploadResponse.json();
         paperId = uploadData.paper_id;
         paperText = uploadData.text;
         
         console.log(`PDF uploaded successfully. Paper ID: ${paperId}, Text length: ${uploadData.text_length}`);
+        console.log('Upload data:', { title: uploadData.title, abstract: uploadData.abstract?.substring(0, 100) });
       }
       
       // Call the orchestrator endpoint
@@ -583,8 +596,10 @@ const HexGrid = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          paper_id: inputMode === 'arxiv' ? paperId : null,
+          paper_id: paperId, // Send paper_id for both arXiv and uploaded PDFs
           paper_text: paperText, // Only set for PDF uploads
+          paper_title: inputMode === 'upload' && uploadData ? uploadData.title : null,
+          paper_abstract: inputMode === 'upload' && uploadData ? uploadData.abstract : null,
           k: kValue
         })
       });
@@ -691,7 +706,8 @@ const HexGrid = () => {
       
     } catch (error) {
       console.error('Analysis error:', error);
-      alert(`Failed to analyze paper: ${error.message}\n\nPlease make sure:\n1. Flask backend is running on port 1919\n2. Worker is deployed or running locally\n3. The arXiv ID is valid`);
+      console.error('Error stack:', error.stack);
+      alert(`Failed to analyze paper: ${error.message}\n\nPlease check the browser console for details.\n\nMake sure:\n1. Flask backend is accessible (${FLASK_URL})\n2. Worker is deployed or running (${WORKER_URL})\n3. The arXiv ID is valid`);
       setLoading(false);
       setModalOpen(true); // Reopen modal so user can try again
     }
