@@ -660,6 +660,10 @@ const HexGrid = () => {
                       setHoveredPaper(paper.id);
                     }
                   } else {
+                    // Clear any pending timeout from previous white hexagon
+                    if (hoverTimeoutRef.current) {
+                      clearTimeout(hoverTimeoutRef.current);
+                    }
                     setHoveredHex(hex.id);
                   }
                 }}
