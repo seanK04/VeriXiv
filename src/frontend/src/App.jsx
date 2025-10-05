@@ -2,9 +2,31 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Plus, X, FileText, Database, Link2, CheckCircle, Loader } from 'lucide-react';
 import './App.css';
 
+// Helper function to parse arXiv URLs/IDs
+const parseArxivUrl = (input) => {
+  const cleaned = input.trim();
+  
+  const patterns = [
+    /arxiv\.org\/abs\/(\d+\.\d+(?:v\d+)?)/i,
+    /arxiv\.org\/pdf\/(\d+\.\d+(?:v\d+)?)/i,
+    /^(\d{4}\.\d{4,5}(?:v\d+)?)$/,
+    /arxiv:(\d+\.\d+(?:v\d+)?)/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = cleaned.match(pattern);
+    if (match) return match[1];
+  }
+  
+  return null;
+};
+
 const HexGrid = () => {
   const [modalOpen, setModalOpen] = useState(false);
-  const [paperId, setPaperId] = useState('');
+  const [inputMode, setInputMode] = useState('arxiv'); // 'arxiv' or 'upload'
+  const [arxivInput, setArxivInput] = useState('');
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [fileError, setFileError] = useState('');
   const [kValue, setKValue] = useState(5);
   const [loading, setLoading] = useState(false);
   const [activeHexagons, setActiveHexagons] = useState([]);
@@ -232,9 +254,86 @@ const HexGrid = () => {
     });
   };
 
-  // Mock API call
+  // File upload handlers
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    setFileError('');
+    
+    if (!file) return;
+    
+    // Validate file type
+    if (file.type !== 'application/pdf') {
+      setFileError('Please upload a PDF file');
+      setUploadedFile(null);
+      return;
+    }
+    
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setFileError('File size must be less than 10MB');
+      setUploadedFile(null);
+      return;
+    }
+    
+    setUploadedFile(file);
+  };
+
+  const handleRemoveFile = () => {
+    setUploadedFile(null);
+    setFileError('');
+  };
+
+  // Drag and drop handlers
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      
+      // Create a synthetic event to reuse handleFileChange
+      const syntheticEvent = {
+        target: {
+          files: [file]
+        }
+      };
+      handleFileChange(syntheticEvent);
+    }
+  };
+
+  // Submit handler with API integration
   const handleSubmit = async () => {
-    if (!paperId) return;
+    let paperId;
+    
+    if (inputMode === 'arxiv') {
+      // Parse arXiv URL
+      paperId = parseArxivUrl(arxivInput);
+      if (!paperId) {
+        alert('Invalid arXiv URL or ID. Please check your input.');
+        return;
+      }
+      
+      console.log('Processing arXiv paper:', paperId);
+      // TODO: Call backend API for arXiv paper
+      // const pdfUrl = `https://arxiv.org/pdf/${paperId}.pdf`;
+      
+    } else {
+      // Handle PDF upload
+      if (!uploadedFile) {
+        alert('Please select a PDF file to upload');
+        return;
+      }
+      
+      console.log('Uploading PDF:', uploadedFile.name);
+      // TODO: Call backend API for PDF upload
+      paperId = 'uploaded_' + Date.now();
+    }
     
     setLoading(true);
     setModalOpen(false);
@@ -278,7 +377,10 @@ const HexGrid = () => {
     setActiveHexagons([]);
     setConnections([]);
     setPapers([]);
-    setPaperId('');
+    setArxivInput('');
+    setUploadedFile(null);
+    setFileError('');
+    setInputMode('arxiv');
     setKValue(5);
   };
 
@@ -698,7 +800,7 @@ const HexGrid = () => {
             borderRadius: '12px',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
             padding: '32px',
-            maxWidth: '448px',
+            maxWidth: '500px',
             width: '100%',
             margin: '16px'
           }}>
@@ -706,15 +808,59 @@ const HexGrid = () => {
               fontSize: '1.25rem',
               fontWeight: 600,
               color: '#111827',
-              marginBottom: '16px'
+              marginBottom: '24px'
             }}>Enter Paper Details</h2>
 
+            {/* Tab Toggle */}
             <div style={{
               display: 'flex',
-              flexDirection: 'column',
-              gap: '16px'
+              gap: '8px',
+              marginBottom: '24px',
+              backgroundColor: '#f3f4f6',
+              padding: '4px',
+              borderRadius: '8px'
             }}>
-              <div>
+              <button
+                onClick={() => setInputMode('arxiv')}
+                style={{
+                  flex: 1,
+                  padding: '8px 16px',
+                  backgroundColor: inputMode === 'arxiv' ? 'white' : 'transparent',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  color: inputMode === 'arxiv' ? '#111827' : '#6b7280',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                  boxShadow: inputMode === 'arxiv' ? '0 1px 3px 0 rgba(0, 0, 0, 0.1)' : 'none'
+                }}
+              >
+                arXiv Link
+              </button>
+              <button
+                onClick={() => setInputMode('upload')}
+                style={{
+                  flex: 1,
+                  padding: '8px 16px',
+                  backgroundColor: inputMode === 'upload' ? 'white' : 'transparent',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  color: inputMode === 'upload' ? '#111827' : '#6b7280',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                  boxShadow: inputMode === 'upload' ? '0 1px 3px 0 rgba(0, 0, 0, 0.1)' : 'none'
+                }}
+              >
+                Upload PDF
+              </button>
+            </div>
+
+            {/* arXiv Input Mode */}
+            {inputMode === 'arxiv' && (
+              <div style={{ marginBottom: '24px' }}>
                 <label style={{
                   display: 'block',
                   fontSize: '0.875rem',
@@ -722,22 +868,23 @@ const HexGrid = () => {
                   color: '#374151',
                   marginBottom: '8px'
                 }}>
-                  Paper ID (e.g., arXiv:2103.xxxxx)
+                  arXiv URL or Paper ID
                 </label>
                 <input
                   type="text"
-                  value={paperId}
-                  onChange={(e) => setPaperId(e.target.value)}
+                  value={arxivInput}
+                  onChange={(e) => setArxivInput(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '8px 16px',
+                    padding: '10px 16px',
                     border: '1px solid #d1d5db',
                     borderRadius: '8px',
                     fontSize: '14px',
                     outline: 'none',
-                    transition: 'border-color 0.15s, ring 0.15s'
+                    transition: 'border-color 0.15s, box-shadow 0.15s',
+                    boxSizing: 'border-box'
                   }}
-                  placeholder="arXiv:2103.12345"
+                  placeholder="https://arxiv.org/abs/2103.12345 or 2103.12345"
                   onFocus={(e) => {
                     e.target.style.borderColor = '#eab308';
                     e.target.style.boxShadow = '0 0 0 2px rgba(234, 179, 8, 0.2)';
@@ -747,9 +894,19 @@ const HexGrid = () => {
                     e.target.style.boxShadow = 'none';
                   }}
                 />
+                <p style={{
+                  fontSize: '0.75rem',
+                  color: '#6b7280',
+                  marginTop: '6px'
+                }}>
+                  Paste any arXiv link format (abstract or PDF)
+                </p>
               </div>
+            )}
 
-              <div>
+            {/* Upload Mode */}
+            {inputMode === 'upload' && (
+              <div style={{ marginBottom: '24px' }}>
                 <label style={{
                   display: 'block',
                   fontSize: '0.875rem',
@@ -757,31 +914,140 @@ const HexGrid = () => {
                   color: '#374151',
                   marginBottom: '8px'
                 }}>
-                  Number of related papers (k = {kValue})
+                  Upload PDF
                 </label>
-                <input
-                  type="range"
-                  min="3"
-                  max="12"
-                  value={kValue}
-                  onChange={(e) => setKValue(parseInt(e.target.value))}
-                  style={{
-                    width: '100%'
+                
+                {!uploadedFile ? (
+                  <label style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '32px',
+                    border: '2px dashed #d1d5db',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                    backgroundColor: '#fafafa'
                   }}
-                />
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.borderColor = '#eab308';
+                    e.currentTarget.style.backgroundColor = '#fffbeb';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.borderColor = '#d1d5db';
+                    e.currentTarget.style.backgroundColor = '#fafafa';
+                  }}>
+                    <FileText size={32} style={{ color: '#9ca3af', marginBottom: '8px' }} />
+                    <span style={{
+                      fontSize: '14px',
+                      color: '#374151',
+                      fontWeight: 500,
+                      marginBottom: '4px'
+                    }}>
+                      Click to upload or drag and drop
+                    </span>
+                    <span style={{
+                      fontSize: '12px',
+                      color: '#6b7280'
+                    }}>
+                      PDF files only, max 10MB
+                    </span>
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      onChange={handleFileChange}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                ) : (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    backgroundColor: '#f9fafb'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <FileText size={20} style={{ color: '#eab308' }} />
+                      <span style={{
+                        fontSize: '14px',
+                        color: '#374151',
+                        fontWeight: 500
+                      }}>
+                        {uploadedFile.name}
+                      </span>
+                    </div>
+                    <button
+                      onClick={handleRemoveFile}
+                      style={{
+                        padding: '4px',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: '#6b7280',
+                        transition: 'color 0.15s'
+                      }}
+                      onMouseOver={(e) => e.target.style.color = '#ef4444'}
+                      onMouseOut={(e) => e.target.style.color = '#6b7280'}
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                )}
+                
+                {fileError && (
+                  <p style={{
+                    fontSize: '0.75rem',
+                    color: '#ef4444',
+                    marginTop: '6px'
+                  }}>
+                    {fileError}
+                  </p>
+                )}
               </div>
+            )}
+
+            {/* K-Value Slider (shown for both modes) */}
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                color: '#374151',
+                marginBottom: '8px'
+              }}>
+                Number of similar papers (k = {kValue})
+              </label>
+              <input
+                type="range"
+                min="3"
+                max="12"
+                value={kValue}
+                onChange={(e) => setKValue(parseInt(e.target.value))}
+                style={{
+                  width: '100%'
+                }}
+              />
             </div>
 
+            {/* Action Buttons */}
             <div style={{
               display: 'flex',
-              gap: '12px',
-              marginTop: '24px'
+              gap: '12px'
             }}>
               <button
-                onClick={() => setModalOpen(false)}
+                onClick={() => {
+                  setModalOpen(false);
+                  setFileError('');
+                }}
                 style={{
                   flex: 1,
-                  padding: '8px 16px',
+                  padding: '10px 16px',
                   backgroundColor: '#f3f4f6',
                   borderRadius: '8px',
                   fontSize: '14px',
@@ -798,20 +1064,29 @@ const HexGrid = () => {
               </button>
               <button
                 onClick={handleSubmit}
+                disabled={inputMode === 'arxiv' ? !arxivInput : !uploadedFile}
                 style={{
                   flex: 1,
-                  padding: '8px 16px',
-                  backgroundColor: '#eab308',
+                  padding: '10px 16px',
+                  backgroundColor: (inputMode === 'arxiv' ? !arxivInput : !uploadedFile) ? '#d1d5db' : '#eab308',
                   borderRadius: '8px',
                   fontSize: '14px',
                   fontWeight: 500,
                   color: 'white',
                   border: 'none',
-                  cursor: 'pointer',
+                  cursor: (inputMode === 'arxiv' ? !arxivInput : !uploadedFile) ? 'not-allowed' : 'pointer',
                   transition: 'background-color 0.15s'
                 }}
-                onMouseOver={(e) => e.target.style.backgroundColor = '#d97706'}
-                onMouseOut={(e) => e.target.style.backgroundColor = '#eab308'}
+                onMouseOver={(e) => {
+                  if (!(inputMode === 'arxiv' ? !arxivInput : !uploadedFile)) {
+                    e.target.style.backgroundColor = '#d97706';
+                  }
+                }}
+                onMouseOut={(e) => {
+                  if (!(inputMode === 'arxiv' ? !arxivInput : !uploadedFile)) {
+                    e.target.style.backgroundColor = '#eab308';
+                  }
+                }}
               >
                 Analyze
               </button>
