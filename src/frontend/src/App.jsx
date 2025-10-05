@@ -32,6 +32,8 @@ const HexGrid = () => {
   const [activeHexagons, setActiveHexagons] = useState([]);
   const [connections, setConnections] = useState([]);
   const [papers, setPapers] = useState([]);
+  const [showCards, setShowCards] = useState(false);
+  const [hoveredPaper, setHoveredPaper] = useState(null);
   const [gridOffset, setGridOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -307,6 +309,25 @@ const HexGrid = () => {
     }
   };
 
+  // Scatter hexagon selection - cluster around center, max 3 hexagons away
+  const scatterHexagons = (hexagons, count) => {
+    const maxDistance = 3; // Maximum hexagons away from center
+    
+    // Filter hexagons within maxDistance from center (0,0)
+    // Using Manhattan distance for hex grid: |row| + |col|
+    const nearbyHexagons = hexagons
+      .filter(h => !isCenterHex(h))
+      .filter(h => {
+        const distance = Math.abs(h.row) + Math.abs(h.col);
+        return distance <= maxDistance * 2; // Multiply by 2 for hex grid spacing
+      });
+    
+    // Shuffle and take the first 'count' hexagons
+    const shuffled = nearbyHexagons.sort(() => Math.random() - 0.5);
+    
+    return shuffled.slice(0, Math.min(count, shuffled.length));
+  };
+
   // Submit handler with API integration
   const handleSubmit = async () => {
     let paperId;
@@ -338,15 +359,8 @@ const HexGrid = () => {
     setLoading(true);
     setModalOpen(false);
     
-    // Select random hexagons near center
-    const nearby = visibleHexagons
-      .map((hex) => ({
-        ...hex,
-        dist: Math.sqrt(Math.pow(hex.x, 2) + Math.pow(hex.y, 2))
-      }))
-      .filter(h => h.dist > hexWidth && h.dist < 400)
-      .sort((a, b) => a.dist - b.dist)
-      .slice(0, Math.min(kValue, 12));
+    // Select scattered hexagons across the grid
+    const nearby = scatterHexagons(visibleHexagons, Math.min(kValue, 12));
     
     // Animate hexagons turning yellow
     for (let i = 0; i < nearby.length; i++) {
@@ -370,13 +384,21 @@ const HexGrid = () => {
     
     setPapers(mockPapers);
     setConnections(nearby);
+    setShowCards(true); // Show cards initially
     setLoading(false);
+    
+    // Fade out cards after 1 second
+    setTimeout(() => {
+      setShowCards(false);
+    }, 1000);
   };
 
   const handleReset = () => {
     setActiveHexagons([]);
     setConnections([]);
     setPapers([]);
+    setShowCards(false);
+    setHoveredPaper(null);
     setArxivInput('');
     setUploadedFile(null);
     setFileError('');
@@ -560,10 +582,27 @@ const HexGrid = () => {
               <g
                 key={hex.id}
                 transform={`translate(${hex.x}, ${hex.y})`}
-                className='hex-normal'
+                className={isActive ? 'hex-yellow' : 'hex-normal'}
                 style={{ 
                   pointerEvents: 'auto',
-                  transformOrigin: 'center'
+                  transformOrigin: 'center',
+                  cursor: isActive ? 'pointer' : 'default'
+                }}
+                onMouseEnter={() => {
+                  if (isActive) {
+                    // Find the paper associated with this hexagon
+                    const paper = papers.find(p => p.hex.id === hex.id);
+                    if (paper) setHoveredPaper(paper.id);
+                  } else {
+                    setHoveredHex(hex.id);
+                  }
+                }}
+                onMouseLeave={() => {
+                  if (isActive) {
+                    setHoveredPaper(null);
+                  } else {
+                    setHoveredHex(null);
+                  }
                 }}
               >
                 <polygon
@@ -573,10 +612,8 @@ const HexGrid = () => {
                   strokeWidth={isActive ? "1.5" : "1"}
                   style={{
                     animation: isActive ? 'rotateHex 0.6s ease-out' : undefined,
-                    transition: 'fill 0.15s ease-out'
+                    transition: 'fill 0.15s ease-out, transform 0.2s ease-out'
                   }}
-                  onMouseEnter={() => !isActive && setHoveredHex(hex.id)}
-                  onMouseLeave={() => setHoveredHex(null)}
                 />
               </g>
             );
@@ -609,9 +646,9 @@ const HexGrid = () => {
                     transition: 'fill 0.15s ease-out'
                   }}
                 />
-                <g transform="translate(-16, -16)" style={{ pointerEvents: 'none' }}>
-                  <Plus size={32} stroke="#f59e0b" strokeWidth={2.5} />
-                </g>
+                  <g transform="translate(-16, -16)" style={{ pointerEvents: 'none' }}>
+                    <Plus size={32} stroke="#f59e0b" strokeWidth={2.5} />
+                  </g>
               </g>
             );
           })}
@@ -657,11 +694,50 @@ const HexGrid = () => {
         </div>
       )}
 
+      {/* Tooltip - Hover Instruction */}
+      {papers.length > 0 && !showCards && !hoveredPaper && (
+        <div style={{
+          position: 'absolute',
+          bottom: '80px',
+          right: '16px',
+          backgroundColor: 'rgba(234, 179, 8, 0.95)',
+          color: 'white',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          fontSize: '14px',
+          fontWeight: 500,
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+          zIndex: 25,
+          animation: 'fadeIn 0.5s ease-out',
+          pointerEvents: 'none'
+        }}>
+          💡 Hover over yellow hexagons to see paper details
+        </div>
+      )}
+
       {/* Paper Cards */}
       {papers.map((paper, idx) => {
         const screenX = viewportSize.width / 2 + paper.hex.x + gridOffset.x;
         const screenY = viewportSize.height / 2 + paper.hex.y + gridOffset.y;
         const cardOffset = idx % 2 === 0 ? 80 : -80;
+        
+        const isHovered = hoveredPaper === paper.id;
+        const shouldRender = showCards || isHovered || papers.length > 0;
+        
+        if (!shouldRender && !showCards) return null;
+        
+        // Determine animation state
+        let animationStyle;
+        if (isHovered) {
+          // Quick fade in on hover
+          animationStyle = 'fadeIn 0.2s ease-out forwards';
+        } else if (showCards) {
+          // Initial staggered fade in
+          animationStyle = `fadeIn 0.5s ease-out ${idx * 0.1}s forwards`;
+        } else {
+          // Natural fade out with slight upward movement
+          animationStyle = `fadeOutUp 0.6s ease-out forwards`;
+        }
         
         return (
           <div
@@ -674,11 +750,11 @@ const HexGrid = () => {
               padding: '16px',
               width: '256px',
               zIndex: 10,
-              pointerEvents: 'auto',
+              pointerEvents: isHovered ? 'auto' : 'none',
               left: screenX + cardOffset,
               top: screenY - 60,
-              animation: `fadeIn 0.5s ease-out ${idx * 0.1}s forwards`,
-              opacity: 0
+              animation: animationStyle,
+              opacity: showCards || isHovered ? 1 : 0
             }}
           >
             <h3 style={{
@@ -1022,17 +1098,17 @@ const HexGrid = () => {
                 marginBottom: '8px'
               }}>
                 Number of similar papers (k = {kValue})
-              </label>
-              <input
-                type="range"
-                min="3"
-                max="12"
-                value={kValue}
-                onChange={(e) => setKValue(parseInt(e.target.value))}
-                style={{
-                  width: '100%'
-                }}
-              />
+                </label>
+                <input
+                  type="range"
+                  min="3"
+                  max="12"
+                  value={kValue}
+                  onChange={(e) => setKValue(parseInt(e.target.value))}
+                  style={{
+                    width: '100%'
+                  }}
+                />
             </div>
 
             {/* Action Buttons */}
@@ -1129,9 +1205,38 @@ const HexGrid = () => {
           transform: scale(1.3);
         }
         
+        /* Yellow hexagon hover effects */
+        .hex-yellow {
+          cursor: pointer;
+          transition: transform 0.2s ease-out, filter 0.2s ease-out;
+        }
+        
+        .hex-yellow:hover {
+          transform: scale(1.15);
+          filter: brightness(1.1) drop-shadow(0 0 8px rgba(234, 179, 8, 0.4));
+        }
+        
         /* Cursor style for hexagons */
         .hex-normal {
           cursor: default;
+        }
+        
+        /* Fade out animation */
+        @keyframes fadeOut {
+          from { opacity: 1; }
+          to { opacity: 0; }
+        }
+        
+        /* Natural fade out with upward movement */
+        @keyframes fadeOutUp {
+          0% { 
+            opacity: 1; 
+            transform: translateY(0);
+          }
+          100% { 
+            opacity: 0; 
+            transform: translateY(-20px);
+          }
         }
       `}</style>
     </div>
