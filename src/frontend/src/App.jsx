@@ -436,10 +436,13 @@ const HexGrid = () => {
         throw new Error(data.error || 'Analysis failed');
       }
       
-      console.log(`Received ${data.similar_papers.length} analyzed papers`);
+      console.log(`Received ${data.similar_papers.length} similar papers${data.uploaded_paper ? ' + uploaded paper' : ''}`);
+      
+      // Calculate total hexagons needed (similar papers + uploaded paper if exists)
+      const totalPapers = data.similar_papers.length + (data.uploaded_paper ? 1 : 0);
       
       // Select scattered hexagons across the grid
-      const nearby = scatterHexagons(visibleHexagons, Math.min(data.similar_papers.length, 12));
+      const nearby = scatterHexagons(visibleHexagons, Math.min(totalPapers, 12));
       
       // Animate hexagons turning on
       for (let i = 0; i < nearby.length; i++) {
@@ -447,8 +450,8 @@ const HexGrid = () => {
         setActiveHexagons(prev => [...prev, nearby[i]]);
       }
       
-      // Map API data to paper format
-      const mappedPapers = data.similar_papers.map((paper, idx) => ({
+      // Map similar papers to paper format
+      const mappedSimilarPapers = data.similar_papers.map((paper, idx) => ({
         id: paper.id,
         title: paper.title,
         score: paper.reproducibility_score, // Already 0-100
@@ -457,8 +460,30 @@ const HexGrid = () => {
         replications: Math.round(paper.similarity_score * 100), // Convert similarity to percentage
         rubricBreakdown: paper.rubric_breakdown,
         assessment: paper.assessment,
+        isUploadedPaper: false,
         hex: nearby[idx]
       }));
+      
+      // Add uploaded paper if it exists
+      const allPapers = [...mappedSimilarPapers];
+      if (data.uploaded_paper) {
+        const uploadedPaperObj = {
+          id: data.uploaded_paper.id,
+          title: data.uploaded_paper.title,
+          score: data.uploaded_paper.reproducibility_score,
+          dataAvailable: data.uploaded_paper.data_available,
+          codeAvailable: data.uploaded_paper.code_available,
+          replications: Math.round(data.uploaded_paper.similarity_score * 100),
+          rubricBreakdown: data.uploaded_paper.rubric_breakdown,
+          assessment: data.uploaded_paper.assessment,
+          isUploadedPaper: true,
+          hex: nearby[mappedSimilarPapers.length] // Assign to the next available hexagon
+        };
+        allPapers.push(uploadedPaperObj);
+        console.log(`Uploaded paper score: ${uploadedPaperObj.score}%`);
+      }
+      
+      const mappedPapers = allPapers;
       
       setPapers(mappedPapers);
       setConnections(nearby);
@@ -559,6 +584,10 @@ const HexGrid = () => {
       // Find the associated paper to get its score
       const paper = papers.find(p => p.hex.id === hex.id);
       if (paper) {
+        // Blue color for uploaded paper
+        if (paper.isUploadedPaper) {
+          return '#3B82F6'; // Blue color
+        }
         return getScoreColor(paper.score);
       }
       return '#ffcc00'; // Fallback
@@ -572,6 +601,10 @@ const HexGrid = () => {
       // Find the associated paper to get its score
       const paper = papers.find(p => p.hex.id === hex.id);
       if (paper) {
+        // Darker blue stroke for uploaded paper
+        if (paper.isUploadedPaper) {
+          return '#1E40AF'; // Darker blue for stroke
+        }
         // Darken the fill color for the stroke
         const fillColor = getScoreColor(paper.score);
         // Simple darkening by reducing RGB values

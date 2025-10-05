@@ -620,8 +620,42 @@ async function handleFullPipeline(request, env, corsHeaders) {
     
     console.log(`Found ${similarPapers.length} similar papers`);
     
-    // STEP 3: Score each similar paper via Flask
-    console.log('Scoring papers with Gemini...');
+    // STEP 3A: Score the uploaded paper
+    console.log('Scoring uploaded paper...');
+    let uploadedPaperScore = null;
+    
+    try {
+      const scoreResponse = await fetch(`${env.FLASK_API_URL}/score-by-text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paper_id: paper_id || 'uploaded',
+          paper_text: paperExcerpt
+        })
+      });
+      
+      if (scoreResponse.ok) {
+        const scoreData = await scoreResponse.json();
+        uploadedPaperScore = {
+          id: paper_id || 'uploaded',
+          title: 'Your Uploaded Paper',
+          authors: [],
+          similarity_score: 1.0, // Perfect similarity to itself
+          rubric_score: scoreData.graded_rubric_score || 0,
+          rubric_details: scoreData.graded_rubric || {},
+          assessment: scoreData.graded_rubric?.Assessment || 'No assessment available',
+          is_uploaded_paper: true
+        };
+        console.log(`Uploaded paper scored: ${Math.round(uploadedPaperScore.rubric_score * 100)}%`);
+      } else {
+        console.warn('Failed to score uploaded paper');
+      }
+    } catch (error) {
+      console.error('Error scoring uploaded paper:', error.message);
+    }
+    
+    // STEP 3B: Score each similar paper via Flask
+    console.log('Scoring similar papers with Gemini...');
     const scoringPromises = similarPapers.map(async (paper) => {
       try {
         const scoreResponse = await fetch(`${env.FLASK_API_URL}/score`, {
@@ -665,12 +699,24 @@ async function handleFullPipeline(request, env, corsHeaders) {
       });
     }
     
-    console.log(`Successfully scored ${scoredPapers.length} papers`);
+    console.log(`Successfully scored ${scoredPapers.length} similar papers`);
     
     // STEP 4: Return aggregated results
     return new Response(JSON.stringify({
       success: true,
       analyzed_paper_id: paper_id || 'uploaded',
+      uploaded_paper: uploadedPaperScore ? {
+        id: uploadedPaperScore.id,
+        title: uploadedPaperScore.title,
+        authors: uploadedPaperScore.authors,
+        similarity_score: uploadedPaperScore.similarity_score,
+        reproducibility_score: Math.round(uploadedPaperScore.rubric_score * 100),
+        data_available: uploadedPaperScore.rubric_details?.['Data Download'] !== 'Not Present',
+        code_available: uploadedPaperScore.rubric_details?.['Link to Code'] !== 'Not Present',
+        rubric_breakdown: uploadedPaperScore.rubric_details,
+        assessment: uploadedPaperScore.assessment,
+        is_uploaded_paper: true
+      } : null,
       similar_papers: scoredPapers.map(p => ({
         id: p.id,
         title: p.title,
@@ -683,7 +729,7 @@ async function handleFullPipeline(request, env, corsHeaders) {
         assessment: p.assessment,
         abstract: p.abstract
       })),
-      total_analyzed: scoredPapers.length,
+      total_analyzed: scoredPapers.length + (uploadedPaperScore ? 1 : 0),
       timestamp: new Date().toISOString()
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }

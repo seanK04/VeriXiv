@@ -105,6 +105,43 @@ def score_endpoint():
     })
 
 
+@app.route("/score-by-text", methods=["POST"])
+def score_by_text():
+    """Score paper directly from text without downloading PDF"""
+    data = request.json
+
+    paper_id = data.get("paper_id", None)
+    if not paper_id:
+        return jsonify({"error": "Paper ID is required"}), 400
+
+    paper_text = data.get("paper_text", None)
+    if not paper_text:
+        return jsonify({"error": "Paper text is required"}), 400
+
+    print(f"Scoring paper by text: {paper_id}")
+    
+    # Check cache first
+    if paper_id in cache:
+        print("Cache hit! Using cached result.")
+        result = cache[paper_id]
+    else:
+        print("Cache miss! Deferring to Gemini API.")
+        result = score_paper(paper_text, MODEL_NAME)
+        cache[paper_id] = result
+
+    graded_rubric = result['fields']
+    graded_rubric_score = rubric_to_num(graded_rubric, NLP_REPRODUCABILITY_RUBRIC_FIELDS)
+
+    print(f"Graded rubric as number: {graded_rubric_score}")
+    
+    return jsonify({
+        "graded_rubric": graded_rubric,
+        "graded_rubric_score": graded_rubric_score,
+        "paper_id": paper_id,
+        "analysis_timestamp": str(datetime.now())
+    })
+
+
 @app.route("/process-arxiv", methods=["POST"])
 def process_arxiv():
     """Process paper from arXiv URL"""
