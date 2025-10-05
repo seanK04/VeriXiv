@@ -787,11 +787,11 @@ async function findSimilarPapers(text, topK, env) {
     
     const queryVector = aiResponse.data[0];
     
-    // Search in Vectorize
+    // Search in Vectorize - get topK + 1 to skip the first (most similar, likely the paper itself)
     const vectorizeResponse = await env.VEC.query(
       Float32Array.from(queryVector),
       { 
-        topK: Math.min(topK, 20), // Cap at 20 results
+        topK: Math.min(topK + 1, 21), // Get one extra result, cap at 21
         returnValues: false,
         returnMetadata: true
       }
@@ -801,8 +801,8 @@ async function findSimilarPapers(text, topK, env) {
       throw new Error('Vector search failed');
     }
     
-    // Format and return results
-    return vectorizeResponse.matches.map(match => ({
+    // Skip the first result (closest match, often the paper itself) and return the next k
+    const similarPapers = vectorizeResponse.matches.slice(1).map(match => ({
       id: match.id,
       title: match.metadata?.title || 'Untitled',
       authors: match.metadata?.authors || [],
@@ -812,6 +812,8 @@ async function findSimilarPapers(text, topK, env) {
       abstract: match.metadata?.abstract || '',
       pdf_url: match.metadata?.pdf_url || `https://arxiv.org/pdf/${match.id.replace('arxiv:', '')}.pdf`
     }));
+    
+    return similarPapers;
   } catch (error) {
     console.error('Error finding similar papers:', error);
     throw error;
