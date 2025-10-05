@@ -28,6 +28,7 @@ const HexGrid = () => {
   const [uploadedFile, setUploadedFile] = useState(null);
   const [fileError, setFileError] = useState('');
   const [kValue, setKValue] = useState(5);
+  const [paperName, setPaperName] = useState('');
   const [loading, setLoading] = useState(false);
   const [activeHexagons, setActiveHexagons] = useState([]);
   const [connections, setConnections] = useState([]);
@@ -45,6 +46,9 @@ const HexGrid = () => {
   const [hoveredHex, setHoveredHex] = useState(null);
   const [viewportSize, setViewportSize] = useState({ width: window.innerWidth, height: window.innerHeight });
   const [selectedPaper, setSelectedPaper] = useState(null);
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
+  const [collapsedQueries, setCollapsedQueries] = useState(new Set());
+  const [queryIdCounter, setQueryIdCounter] = useState(0);
 
   // Hexagon dimensions
   const hexSize = 60;
@@ -122,6 +126,19 @@ const HexGrid = () => {
   };
 
   const visibleHexagons = generateVisibleGrid();
+  
+  // Filter out papers from collapsed queries (but keep the blue uploaded paper)
+  const visiblePapers = papers.filter(paper => 
+    paper.isUploadedPaper || !collapsedQueries.has(paper.queryId)
+  );
+  const visibleActiveHexagons = activeHexagons.filter(hex => {
+    const paper = papers.find(p => p.hex.id === hex.id);
+    return !paper || paper.isUploadedPaper || !collapsedQueries.has(paper.queryId);
+  });
+  const visibleConnections = connections.filter(hex => {
+    const paper = papers.find(p => p.hex.id === hex.id);
+    return !paper || paper.isUploadedPaper || !collapsedQueries.has(paper.queryId);
+  });
 
   // Animate grid panning
   useEffect(() => {
@@ -195,9 +212,14 @@ const HexGrid = () => {
     }
   }, [modalOpen, selectedPaper]);
 
-  // Handle keyboard navigation
+  // Handle keyboard navigation and shift detection
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Track shift key press
+      if (e.key === 'Shift') {
+        setIsShiftPressed(true);
+      }
+      
       // Handle ESC key for closing popup
       if (e.key === 'Escape') {
         if (selectedPaper) {
@@ -249,9 +271,28 @@ const HexGrid = () => {
       }
     };
     
+    const handleKeyUp = (e) => {
+      // Track shift key release
+      if (e.key === 'Shift') {
+        setIsShiftPressed(false);
+      }
+    };
+    
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, [modalOpen, selectedPaper]);
+
+  // Clear hovered paper when shift is pressed
+  useEffect(() => {
+    if (isShiftPressed) {
+      setHoveredPaper(null);
+      setFadingCards(new Set());
+    }
+  }, [isShiftPressed]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -349,13 +390,17 @@ const HexGrid = () => {
   };
 
   // Scatter hexagon selection - cluster around center, max 3 hexagons away
-  const scatterHexagons = (hexagons, count) => {
+  const scatterHexagons = (hexagons, count, excludeHexagons = []) => {
     const maxDistance = 3; // Maximum hexagons away from center
+    
+    // Create a Set of already-used hexagon IDs for fast lookup
+    const usedIds = new Set(excludeHexagons.map(h => h.id));
     
     // Filter hexagons within maxDistance from center (0,0)
     // Using Manhattan distance for hex grid: |row| + |col|
     const nearbyHexagons = hexagons
       .filter(h => !isCenterHex(h))
+      .filter(h => !usedIds.has(h.id)) // Exclude already-used hexagons
       .filter(h => {
         const distance = Math.abs(h.row) + Math.abs(h.col);
         return distance <= maxDistance * 2; // Multiply by 2 for hex grid spacing
@@ -451,14 +496,18 @@ const HexGrid = () => {
       // Calculate total hexagons needed (similar papers + uploaded paper if exists)
       const totalPapers = data.similar_papers.length + (data.uploaded_paper ? 1 : 0);
       
-      // Select scattered hexagons across the grid
-      const nearby = scatterHexagons(visibleHexagons, Math.min(totalPapers, 12));
+      // Select scattered hexagons across the grid, excluding already-used ones
+      const nearby = scatterHexagons(visibleHexagons, Math.min(totalPapers, 12), activeHexagons);
       
       // Animate hexagons turning on
       for (let i = 0; i < nearby.length; i++) {
         await new Promise(resolve => setTimeout(resolve, 150));
         setActiveHexagons(prev => [...prev, nearby[i]]);
       }
+      
+      // Get current query ID and increment for next query
+      const currentQueryId = queryIdCounter;
+      setQueryIdCounter(prev => prev + 1);
       
       // Map similar papers to paper format
       const mappedSimilarPapers = data.similar_papers.map((paper, idx) => ({
@@ -471,15 +520,18 @@ const HexGrid = () => {
         rubricBreakdown: paper.rubric_breakdown,
         assessment: paper.assessment,
         isUploadedPaper: false,
+        queryId: currentQueryId,
         hex: nearby[idx]
       }));
       
       // Add uploaded paper if it exists
       const allPapers = [...mappedSimilarPapers];
       if (data.uploaded_paper) {
+        const customName = paperName.trim() || 'Your Uploaded Paper';
         const uploadedPaperObj = {
           id: data.uploaded_paper.id,
-          title: data.uploaded_paper.title,
+          title: customName, // Use custom name as the title
+          originalTitle: data.uploaded_paper.title, // Store original title
           score: data.uploaded_paper.reproducibility_score,
           dataAvailable: data.uploaded_paper.data_available,
           codeAvailable: data.uploaded_paper.code_available,
@@ -487,6 +539,8 @@ const HexGrid = () => {
           rubricBreakdown: data.uploaded_paper.rubric_breakdown,
           assessment: data.uploaded_paper.assessment,
           isUploadedPaper: true,
+          queryId: currentQueryId,
+          paperName: customName, // Also store in paperName for label
           hex: nearby[mappedSimilarPapers.length] // Assign to the next available hexagon
         };
         allPapers.push(uploadedPaperObj);
@@ -495,11 +549,15 @@ const HexGrid = () => {
       
       const mappedPapers = allPapers;
       
-      setPapers(mappedPapers);
-      setConnections(nearby);
+      // Append new papers and connections to existing ones
+      setPapers(prev => [...prev, ...mappedPapers]);
+      setConnections(prev => [...prev, ...nearby]);
       setShowCards(true); // Show cards initially
       setIsFadingOut(false); // Reset fade-out state
       setLoading(false);
+      
+      // Clear the paper name for next query
+      setPaperName('');
       
       // Start fade out after 2 seconds
       setTimeout(() => {
@@ -552,6 +610,7 @@ const HexGrid = () => {
     setFileError('');
     setInputMode('arxiv');
     setKValue(5);
+    setPaperName('');
   };
 
   const isCenterHex = (hex) => {
@@ -559,7 +618,7 @@ const HexGrid = () => {
   };
 
   const isActiveHex = (hex) => {
-    return activeHexagons.find(h => h.id === hex.id);
+    return visibleActiveHexagons.find(h => h.id === hex.id);
   };
 
   // Convert score (0-100) to color gradient: red -> yellow -> green
@@ -836,7 +895,7 @@ const HexGrid = () => {
         
         <g transform={`translate(${viewportSize.width / 2 + gridOffset.x}, ${viewportSize.height / 2 + gridOffset.y})`}>
           {/* Connection Lines */}
-          {connections.map((hex, idx) => (
+          {visibleConnections.map((hex, idx) => (
             <line
               key={`line-${hex.id}`}
               x1="0"
@@ -873,7 +932,21 @@ const HexGrid = () => {
                     e.stopPropagation();
                     const paper = papers.find(p => p.hex.id === hex.id);
                     if (paper) {
-                      setSelectedPaper(paper);
+                      // Shift + Click on blue hexagon to collapse query
+                      if (e.shiftKey && paper.isUploadedPaper) {
+                        setCollapsedQueries(prev => {
+                          const next = new Set(prev);
+                          if (next.has(paper.queryId)) {
+                            next.delete(paper.queryId);
+                          } else {
+                            next.add(paper.queryId);
+                          }
+                          return next;
+                        });
+                      } else if (!e.shiftKey) {
+                        // Normal click opens rubric popup
+                        setSelectedPaper(paper);
+                      }
                     }
                   }
                 }}
@@ -886,7 +959,8 @@ const HexGrid = () => {
                   if (isActive) {
                     // Find the paper associated with this hexagon
                     const paper = papers.find(p => p.hex.id === hex.id);
-                    if (paper) {
+                    if (paper && !isShiftPressed) {
+                      // Only show hover card if shift is not pressed
                       // Clear any pending timeouts for this specific paper
                       const timeouts = fadeTimeoutsRef.current.get(paper.id);
                       if (timeouts) {
@@ -967,6 +1041,26 @@ const HexGrid = () => {
                     transition: 'fill 0.15s ease-out, transform 0.2s ease-out'
                   }}
                 />
+                {/* Display paper name for blue hexagons */}
+                {isActive && (() => {
+                  const paper = papers.find(p => p.hex.id === hex.id);
+                  return paper?.isUploadedPaper && paper?.paperName ? (
+                    <text
+                      x="0"
+                      y={hexSize + 20}
+                      textAnchor="middle"
+                      style={{
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        fill: '#1E40AF',
+                        pointerEvents: 'none',
+                        userSelect: 'none'
+                      }}
+                    >
+                      {paper.paperName}
+                    </text>
+                  ) : null;
+                })()}
               </g>
             );
           })}
@@ -1103,7 +1197,7 @@ const HexGrid = () => {
       )}
 
       {/* Paper Cards */}
-      {papers.map((paper, idx) => {
+      {visiblePapers.map((paper, idx) => {
         const screenX = viewportSize.width / 2 + paper.hex.x + gridOffset.x;
         const screenY = viewportSize.height / 2 + paper.hex.y + gridOffset.y;
         // All cards to the right
@@ -1417,6 +1511,50 @@ const HexGrid = () => {
                 )}
               </div>
             )}
+
+            {/* Paper Name Input */}
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                color: '#374151',
+                marginBottom: '8px'
+              }}>
+                Paper Name (Optional)
+              </label>
+              <input
+                type="text"
+                value={paperName}
+                onChange={(e) => setPaperName(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 16px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  outline: 'none',
+                  transition: 'border-color 0.15s, box-shadow 0.15s',
+                  boxSizing: 'border-box'
+                }}
+                placeholder="e.g., My Research Paper"
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#eab308';
+                  e.target.style.boxShadow = '0 0 0 2px rgba(234, 179, 8, 0.2)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#d1d5db';
+                  e.target.style.boxShadow = 'none';
+                }}
+              />
+              <p style={{
+                fontSize: '0.75rem',
+                color: '#6b7280',
+                marginTop: '6px'
+              }}>
+                Give this paper a custom name for easy identification
+              </p>
+            </div>
 
             {/* K-Value Slider (shown for both modes) */}
             <div style={{ marginBottom: '24px' }}>
