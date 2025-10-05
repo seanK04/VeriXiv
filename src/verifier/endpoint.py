@@ -6,7 +6,7 @@ import hashlib
 import os
 
 import fitz
-from score import score as score_paper
+from score import score as score_paper, score_pages_concurrently
 from constants import MODEL_NAME
 from diskcache import Cache
 from validator import NLP_REPRODUCABILITY_RUBRIC_FIELDS, VALID_VALUES
@@ -34,6 +34,13 @@ CORS(app, origins=allowed_origins if allowed_origins != ["*"] else "*")
 
 cache = Cache('./gemini_cache', size_limit=1e9)
 
+POINTS = [1, 0.5, 0, 1]
+POINTS_MAP = {
+    rubric_mark : point for (rubric_mark, point) in zip(VALID_VALUES, POINTS)
+} | {
+    point : rubric_mark for (rubric_mark, point) in zip(VALID_VALUES, POINTS)
+}
+
 def get_pdf_as_bytes(pdf_url: str):
     """Download PDF from the provided URL (from Vectorize metadata)"""
     try:
@@ -55,17 +62,65 @@ def rubric_to_num(graded_rubric: dict[str, str], fields: list[str]):
     Not Present : 0
     Not Applicable : 1
     """
-    POINTS = [1, 0.5, 0, 1]
-    POINTS_MAP = {
-        rubric_mark : point for (rubric_mark, point) in zip(VALID_VALUES, POINTS)
-        }
-
     points = 0
     total_possible_points = len(fields)
     for field in fields:
         points += POINTS_MAP[graded_rubric[field]]
 
     return points / total_possible_points
+
+def pretty_print(D):
+    for k,v in D.items():
+        print(f"{k} : {v}")
+
+
+def get_page_references(rubric_fields, graded_rubrics):
+    """
+    For each rubric field:
+      - If any page is 'Complete', return all such pages.
+      - Else if any page is 'Partial', return all such pages.
+      - Else return [-1].
+      
+    rubric_fields: list of rubric field names
+    graded_rubrics: list[dict], one dict per page mapping field -> value
+    """
+    page_references = {}
+
+    for field in rubric_fields:
+        complete_pages = []
+        partial_pages = []
+
+        for i, graded_rubric in enumerate(graded_rubrics):
+            val = graded_rubric.get(field)
+            if val == "Complete":
+                complete_pages.append(i + 1)
+            elif val == "Partial":
+                partial_pages.append(i + 1)
+
+        if complete_pages:
+            page_references[field] = complete_pages
+        elif partial_pages:
+            page_references[field] = partial_pages
+        else:
+            page_references[field] = [-1]
+
+    return page_references
+
+
+def calc_aggregate_graded_rubric(graded_rubrics):
+
+    aggregate_graded_rubric_by_value = {}
+    for graded_rubric in graded_rubrics:
+        for k,v in graded_rubric.items():
+            if k == "Assessment" or k == "assessment":
+                continue
+            aggregate_graded_rubric_by_value[k] = max(aggregate_graded_rubric_by_value.get(k, POINTS_MAP[v]), POINTS_MAP[v])
+
+    aggregate_graded_rubric_by_name = {}
+    for k,v in aggregate_graded_rubric_by_value.items():
+        aggregate_graded_rubric_by_name[k] = POINTS_MAP[v]
+
+    return aggregate_graded_rubric_by_name
 
 
 @app.route("/", methods=["GET"])
@@ -99,22 +154,35 @@ def score_endpoint():
             return jsonify({"error": "Failed to download PDF"}), 500
         
         doc = fitz.open(stream=raw_pdf_bytes, filetype="pdf")
-        paper_text = ''
+        pages_text = []
         for page in doc:
-            paper_text += page.get_text()
+            pages_text.append(page.get_text())
+
+        page_results = score_pages_concurrently(pages_text, MODEL_NAME, max_workers=8)
+        
+        graded_rubrics = []
+        for page_result in page_results:
+            graded_rubrics.append(page_result['fields'])
+        
+        result = {}
+
+        result['fields'] = calc_aggregate_graded_rubric(graded_rubrics)
+        result['page_references'] = get_page_references(NLP_REPRODUCABILITY_RUBRIC_FIELDS, graded_rubrics)
 
         print("Cache miss! Deferring to Gemini API.")
-        result = score_paper(paper_text, MODEL_NAME)
         cache[paper_id] = result
 
     graded_rubric = result['fields']
     graded_rubric_score = rubric_to_num(graded_rubric, NLP_REPRODUCABILITY_RUBRIC_FIELDS)
+    page_references = result['page_references']
 
     print(f"Graded rubric as number: {graded_rubric_score}")
+    pretty_print(page_references)
     
     return jsonify({
         "graded_rubric": graded_rubric,
         "graded_rubric_score" : graded_rubric_score,
+        "page_references" : page_references,
         "paper_id": paper_id,
         "pdf_url": pdf_url,
         "analysis_timestamp": str(datetime.now())
