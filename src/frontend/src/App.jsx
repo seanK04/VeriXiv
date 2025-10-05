@@ -334,7 +334,7 @@ const HexGrid = () => {
       // Don't process shortcuts when modal is open (user may be typing)
       if (modalOpen || selectedPaper) return;
       
-      const step = e.shiftKey ? 50 : 20;
+      const step = 20;
       setAutoScroll(false);
       
       switch(e.key) {
@@ -525,7 +525,7 @@ const HexGrid = () => {
     let paperId;
     let paperText = null;
     const WORKER_URL = import.meta.env.VITE_WORKER_URL || 'http://localhost:8787';
-    const FLASK_URL = 'https://photoheliographic-unmorosely-king.ngrok-free.dev'; // Your ngrok URL
+    const FLASK_URL = import.meta.env.VITE_FLASK_URL || 'http://localhost:1919';
     
     setLoading(true);
     setModalOpen(false);
@@ -980,7 +980,6 @@ const HexGrid = () => {
           <div>⌨️ <strong>Arrow Keys / WASD</strong> to move</div>
           <div>🖱️ <strong>Scroll</strong> to pan smoothly</div>
           <div>⌨️ <strong>R</strong> to recenter & resume auto-scroll</div>
-          <div>⌨️ <strong>Shift</strong> for faster movement</div>
           <div>🖱️ <strong>Shift + Drag</strong> to move hexagons</div>
         </div>
       </div>

@@ -3,6 +3,7 @@ from flask_cors import CORS
 import requests
 from datetime import datetime
 import hashlib
+import os
 
 import fitz
 from score import score as score_paper
@@ -25,7 +26,12 @@ curl -X POST http://localhost:1919/score \
 """
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for frontend requests
+
+# Configure CORS for production
+# Add your Cloudflare Pages URL to allowed origins
+allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+CORS(app, origins=allowed_origins if allowed_origins != ["*"] else "*")
+
 cache = Cache('./gemini_cache', size_limit=1e9)
 
 def get_pdf_as_bytes(pdf_url: str):
@@ -60,6 +66,16 @@ def rubric_to_num(graded_rubric: dict[str, str], fields: list[str]):
         points += POINTS_MAP[graded_rubric[field]]
 
     return points / total_possible_points
+
+
+@app.route("/", methods=["GET"])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        "status": "healthy",
+        "service": "VeriXiv API",
+        "timestamp": str(datetime.now())
+    })
 
 
 @app.route("/score", methods=["POST"])
@@ -219,4 +235,5 @@ def upload_pdf():
     
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=1919)
+    port = int(os.environ.get("PORT", 1919))
+    app.run(host="0.0.0.0", port=port)
