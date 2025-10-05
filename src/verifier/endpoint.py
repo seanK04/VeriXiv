@@ -1,6 +1,8 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import requests
 from datetime import datetime
+import hashlib
 
 import fitz
 from score import score as score_paper
@@ -22,6 +24,7 @@ curl -X POST http://localhost:1919/score \
 """
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for frontend requests
 cache = Cache('./gemini_cache', size_limit=1e9)
 
 def get_pdf_as_bytes(pdf_url: str):
@@ -69,6 +72,84 @@ def score_endpoint():
         "paper_id": paper_id,
         "pdf_url": pdf_url,
         "analysis_timestamp": str(datetime.now())
+    })
+
+
+@app.route("/process-arxiv", methods=["POST"])
+def process_arxiv():
+    """Process paper from arXiv URL"""
+    data = request.json
+    paper_id = data.get("paper_id")
+    
+    if not paper_id:
+        return jsonify({"error": "Paper ID is required"}), 400
+    
+    # Construct PDF URL from paper ID
+    pdf_url = f"https://arxiv.org/pdf/{paper_id}.pdf"
+    
+    print(f"Processing arXiv paper: {paper_id}")
+    
+    # Download PDF
+    raw_pdf_bytes = get_pdf_as_bytes(pdf_url)
+    if raw_pdf_bytes is None:
+        return jsonify({"error": "Failed to download arXiv paper"}), 500
+    
+    # Extract text from PDF
+    doc = fitz.open(stream=raw_pdf_bytes, filetype="pdf")
+    paper_text = ''
+    for page in doc:
+        paper_text += page.get_text()
+    doc.close()
+    
+    # TODO: Send to Cloudflare Workers for embedding and vectorization
+    # For now, return success with paper info
+    
+    return jsonify({
+        "paper_id": paper_id,
+        "pdf_url": pdf_url,
+        "status": "processed",
+        "text_length": len(paper_text),
+        "timestamp": str(datetime.now())
+    })
+
+
+@app.route("/upload-pdf", methods=["POST"])
+def upload_pdf():
+    """Handle direct PDF upload from user"""
+    if 'file' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+    
+    print(f"Uploading PDF: {file.filename}")
+    
+    # Read PDF bytes
+    pdf_bytes = file.read()
+    
+    # Extract text from PDF
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        paper_text = ''
+        for page in doc:
+            paper_text += page.get_text()
+        doc.close()
+    except Exception as e:
+        return jsonify({"error": f"Failed to process PDF: {str(e)}"}), 500
+    
+    # Generate unique ID for uploaded paper
+    paper_id = f"uploaded_{hashlib.md5(pdf_bytes).hexdigest()[:12]}"
+    
+    # TODO: Send to Cloudflare Workers for embedding and vectorization
+    # For now, return success with paper info
+    
+    return jsonify({
+        "paper_id": paper_id,
+        "filename": file.filename,
+        "status": "processed",
+        "text_length": len(paper_text),
+        "timestamp": str(datetime.now())
     })
     
 
