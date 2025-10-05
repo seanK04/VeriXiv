@@ -14,4 +14,4 @@ index_name = "papers-index"
 # Environment variables
 [vars]
 VECTOR_INDEX = "papers-index"
-FLASK_API_URL = "http://localhost:1919"  # Update this with your Railway URL after deployment
+FLASK_API_URL = "https://verixiv-production.up.railway.app"
