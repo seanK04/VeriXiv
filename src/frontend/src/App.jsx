@@ -49,6 +49,8 @@ const HexGrid = () => {
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const [collapsedQueries, setCollapsedQueries] = useState(new Set());
   const [queryIdCounter, setQueryIdCounter] = useState(0);
+  const [draggingHex, setDraggingHex] = useState(null); // Track which hex is being dragged
+  const [draggedHexPosition, setDraggedHexPosition] = useState(null); // Current drag position
 
   // Hexagon dimensions
   const hexSize = 60;
@@ -85,6 +87,53 @@ const HexGrid = () => {
       ]);
     }
     return points.map(p => p.join(',')).join(' ');
+  };
+
+  // Convert screen coordinates to world coordinates
+  const screenToWorld = (screenX, screenY) => {
+    return {
+      x: screenX - viewportSize.width / 2 - gridOffset.x,
+      y: screenY - viewportSize.height / 2 - gridOffset.y
+    };
+  };
+
+  // Find the nearest grid position to a given world coordinate
+  const findNearestGridPosition = (worldX, worldY) => {
+    // Convert world coordinates to approximate row/col
+    const approxCol = Math.round(worldX / hexWidth);
+    const approxRow = Math.round(worldY / vertDist);
+    
+    // Check nearby positions to find the closest one
+    const candidates = [];
+    for (let rowOffset = -1; rowOffset <= 1; rowOffset++) {
+      for (let colOffset = -1; colOffset <= 1; colOffset++) {
+        const row = approxRow + rowOffset;
+        const col = approxCol + colOffset;
+        const x = col * hexWidth + (row % 2) * (hexWidth / 2);
+        const y = row * vertDist;
+        const distance = Math.sqrt((x - worldX) ** 2 + (y - worldY) ** 2);
+        candidates.push({ row, col, x, y, distance, id: `${col}-${row}` });
+      }
+    }
+    
+    // Return the closest position
+    candidates.sort((a, b) => a.distance - b.distance);
+    return candidates[0];
+  };
+
+  // Check if a grid position is occupied by an active hexagon (excluding the dragging one)
+  const isPositionOccupied = (gridId, excludeHexId = null) => {
+    return activeHexagons.some(h => h.id === gridId && h.id !== excludeHexId);
+  };
+
+  // Check if a grid position is valid for dropping (not center, not occupied)
+  const isValidDropPosition = (gridPosition, excludeHexId = null) => {
+    // Can't drop on center hexagon
+    if (gridPosition.col === 0 && gridPosition.row === 0) {
+      return false;
+    }
+    // Can't drop on occupied position
+    return !isPositionOccupied(gridPosition.id, excludeHexId);
   };
 
   // Generate only visible hexagons within viewport bounds
@@ -167,6 +216,10 @@ const HexGrid = () => {
   
   const handlePointerDown = (e) => {
     if (modalOpen || selectedPaper) return; // Don't allow dragging when modal or popup is open
+    
+    // If dragging a hexagon, don't start grid drag
+    if (draggingHex) return;
+    
     setIsDragging(true);
     setAutoScroll(false);
     setDragStart({
@@ -176,7 +229,32 @@ const HexGrid = () => {
   };
 
   const handlePointerMove = (e) => {
-    if (!isDragging || modalOpen || selectedPaper) return; // Don't allow dragging when modal or popup is open
+    if (modalOpen || selectedPaper) return; // Don't allow dragging when modal or popup is open
+    
+    // Handle hexagon dragging
+    if (draggingHex) {
+      // Cancel any pending animation frame
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
+      
+      // Convert screen position to world coordinates
+      const world = screenToWorld(e.clientX, e.clientY);
+      
+      // Find nearest grid position
+      const nearest = findNearestGridPosition(world.x, world.y);
+      
+      // Only update if position is valid (not center, not occupied)
+      if (isValidDropPosition(nearest, draggingHex.id)) {
+        rafRef.current = requestAnimationFrame(() => {
+          setDraggedHexPosition(nearest);
+        });
+      }
+      return;
+    }
+    
+    // Handle grid dragging
+    if (!isDragging) return;
     
     // Cancel any pending animation frame
     if (rafRef.current) {
@@ -193,7 +271,31 @@ const HexGrid = () => {
   };
 
   const handlePointerUp = () => {
+    // Handle hexagon drop
+    if (draggingHex && draggedHexPosition) {
+      // Only commit the move if the position is valid
+      if (isValidDropPosition(draggedHexPosition, draggingHex.id)) {
+        // Update the hexagon's position in activeHexagons and papers
+        setActiveHexagons(prev => prev.map(h => 
+          h.id === draggingHex.id ? draggedHexPosition : h
+        ));
+        
+        setPapers(prev => prev.map(p => 
+          p.hex.id === draggingHex.id ? { ...p, hex: draggedHexPosition } : p
+        ));
+        
+        setConnections(prev => prev.map(h => 
+          h.id === draggingHex.id ? draggedHexPosition : h
+        ));
+      }
+      // If position is invalid, hexagon stays at original position
+    }
+    
+    // Clean up drag state
+    setDraggingHex(null);
+    setDraggedHexPosition(null);
     setIsDragging(false);
+    
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
     }
@@ -275,6 +377,12 @@ const HexGrid = () => {
       // Track shift key release
       if (e.key === 'Shift') {
         setIsShiftPressed(false);
+        
+        // Cancel hexagon drag if shift is released
+        if (draggingHex) {
+          setDraggingHex(null);
+          setDraggedHexPosition(null);
+        }
       }
     };
     
@@ -284,7 +392,7 @@ const HexGrid = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [modalOpen, selectedPaper]);
+  }, [modalOpen, selectedPaper, draggingHex]);
 
   // Clear hovered paper when shift is pressed
   useEffect(() => {
@@ -611,6 +719,8 @@ const HexGrid = () => {
     setInputMode('arxiv');
     setKValue(5);
     setPaperName('');
+    setDraggingHex(null);
+    setDraggedHexPosition(null);
   };
 
   const isCenterHex = (hex) => {
@@ -767,7 +877,7 @@ const HexGrid = () => {
       onTouchEnd={handlePointerUp}
       onWheel={handleWheel}
       style={{
-        cursor: isDragging ? 'grabbing' : 'grab',
+        cursor: draggingHex ? 'grabbing' : (isDragging ? 'grabbing' : 'grab'),
         width: '100vw',
         height: '100vh',
         margin: 0,
@@ -871,6 +981,7 @@ const HexGrid = () => {
           <div>🖱️ <strong>Scroll</strong> to pan smoothly</div>
           <div>⌨️ <strong>R</strong> to recenter & resume auto-scroll</div>
           <div>⌨️ <strong>Shift</strong> for faster movement</div>
+          <div>🖱️ <strong>Shift + Drag</strong> to move hexagons</div>
         </div>
       </div>
 
@@ -895,45 +1006,58 @@ const HexGrid = () => {
         
         <g transform={`translate(${viewportSize.width / 2 + gridOffset.x}, ${viewportSize.height / 2 + gridOffset.y})`}>
           {/* Connection Lines */}
-          {visibleConnections.map((hex, idx) => (
-            <line
-              key={`line-${hex.id}`}
-              x1="0"
-              y1="0"
-              x2={hex.x}
-              y2={hex.y}
-              stroke="#fbbf24"
-              strokeWidth="2"
-              strokeDasharray="5,5"
-              opacity="0.6"
-              style={{
-                animation: `drawLine 0.5s ease-out ${idx * 0.1}s forwards`,
-                strokeDashoffset: 1000
-              }}
-            />
-          ))}
+          {visibleConnections.map((hex, idx) => {
+            // Use dragged position if this hex is being dragged
+            const hexPosition = draggingHex && hex.id === draggingHex.id && draggedHexPosition 
+              ? draggedHexPosition 
+              : hex;
+            
+            return (
+              <line
+                key={`line-${hex.id}`}
+                x1="0"
+                y1="0"
+                x2={hexPosition.x}
+                y2={hexPosition.y}
+                stroke="#fbbf24"
+                strokeWidth="2"
+                strokeDasharray="5,5"
+                opacity="0.6"
+                style={{
+                  animation: `drawLine 0.5s ease-out ${idx * 0.1}s forwards`,
+                  strokeDashoffset: 1000
+                }}
+              />
+            );
+          })}
           
           {/* Hexagons - non-center first */}
           {visibleHexagons.filter(hex => !isCenterHex(hex)).map((hex) => {
             const isActive = isActiveHex(hex);
             
+            // Get the actual position (dragged position if being dragged, original otherwise)
+            const actualHex = draggingHex && hex.id === draggingHex.id && draggedHexPosition 
+              ? draggedHexPosition 
+              : hex;
+            
             return (
               <g
                 key={hex.id}
-                transform={`translate(${hex.x}, ${hex.y})`}
+                transform={`translate(${actualHex.x}, ${actualHex.y})`}
                 className={isActive ? 'hex-yellow' : 'hex-normal'}
                 style={{ 
                   pointerEvents: 'auto',
                   transformOrigin: 'center',
-                  cursor: isActive ? 'pointer' : 'default'
+                  cursor: draggingHex && hex.id === draggingHex.id ? 'grabbing' : (isActive && isShiftPressed ? 'grab' : (isActive ? 'pointer' : 'default')),
+                  opacity: draggingHex && hex.id === draggingHex.id ? 0.7 : 1
                 }}
                 onClick={(e) => {
                   if (isActive) {
                     e.stopPropagation();
                     const paper = papers.find(p => p.hex.id === hex.id);
                     if (paper) {
-                      // Shift + Click on blue hexagon to collapse query
-                      if (e.shiftKey && paper.isUploadedPaper) {
+                      // Shift + Click on blue hexagon to collapse query (only if not dragging)
+                      if (e.shiftKey && paper.isUploadedPaper && !draggingHex) {
                         setCollapsedQueries(prev => {
                           const next = new Set(prev);
                           if (next.has(paper.queryId)) {
@@ -943,7 +1067,7 @@ const HexGrid = () => {
                           }
                           return next;
                         });
-                      } else if (!e.shiftKey) {
+                      } else if (!e.shiftKey && !draggingHex) {
                         // Normal click opens rubric popup
                         setSelectedPaper(paper);
                       }
@@ -953,6 +1077,12 @@ const HexGrid = () => {
                 onMouseDown={(e) => {
                   if (isActive) {
                     e.stopPropagation();
+                    
+                    // Start hexagon drag on shift+click
+                    if (e.shiftKey && isShiftPressed) {
+                      setDraggingHex(hex);
+                      setDraggedHexPosition(hex);
+                    }
                   }
                 }}
                 onMouseEnter={() => {
@@ -1198,8 +1328,13 @@ const HexGrid = () => {
 
       {/* Paper Cards */}
       {visiblePapers.map((paper, idx) => {
-        const screenX = viewportSize.width / 2 + paper.hex.x + gridOffset.x;
-        const screenY = viewportSize.height / 2 + paper.hex.y + gridOffset.y;
+        // Use dragged position if this paper's hex is being dragged
+        const hexPosition = draggingHex && paper.hex.id === draggingHex.id && draggedHexPosition 
+          ? draggedHexPosition 
+          : paper.hex;
+        
+        const screenX = viewportSize.width / 2 + hexPosition.x + gridOffset.x;
+        const screenY = viewportSize.height / 2 + hexPosition.y + gridOffset.y;
         // All cards to the right
         const cardOffset = 120;
         
