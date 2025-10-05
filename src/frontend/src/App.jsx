@@ -144,6 +144,9 @@ const HexGrid = () => {
   // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Don't process shortcuts when modal is open (user may be typing)
+      if (modalOpen) return;
+      
       const step = e.shiftKey ? 50 : 20;
       setAutoScroll(false);
       
@@ -185,7 +188,7 @@ const HexGrid = () => {
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [modalOpen]);
 
   // Handle mouse wheel zoom/pan with RAF for smooth updates
   const wheelRafRef = useRef(null);
@@ -396,8 +399,7 @@ const HexGrid = () => {
       {/* Hexagon Grid */}
       <svg style={{
         width: '100%',
-        height: '100%',
-        pointerEvents: 'none'
+        height: '100%'
       }}>
         <defs>
           <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
@@ -438,31 +440,30 @@ const HexGrid = () => {
             const isCenter = isCenterHex(hex);
             const isActive = isActiveHex(hex);
             
-            // Calculate distance from center for hover effect eligibility
-            const distFromCenter = Math.sqrt(hex.x * hex.x + hex.y * hex.y);
-            const isNearCenter = distFromCenter < 300; // Only hexagons within 300px get hover
-            
             return (
               <g
                 key={hex.id}
                 transform={`translate(${hex.x}, ${hex.y})`}
-                className={isCenter ? 'hex-hover' : (isNearCenter ? 'hex-normal' : '')}
+                className={isCenter ? 'hex-hover' : 'hex-normal'}
                 onClick={isCenter ? () => setModalOpen(true) : undefined}
                 onMouseDown={(e) => isCenter && e.stopPropagation()}
                 style={{ 
-                  pointerEvents: (isCenter || isNearCenter) ? 'auto' : 'none',
+                  pointerEvents: 'auto',
                   transformOrigin: 'center'
                 }}
               >
                 <polygon
                   points={createHexPath(0, 0, hexSize)}
-                  fill={getHexColor(hex)}
+                  fill={hoveredHex === hex.id && !isCenter && !isActive ? '#f3f4f6' : getHexColor(hex)}
                   stroke={getHexStroke(hex)}
                   strokeWidth={isCenter || isActive ? "1.5" : "1"}
                   filter={isCenter ? "url(#shadow)" : undefined}  // Only apply shadow to center hex
                   style={{
-                    animation: isActive ? 'rotateHex 0.6s ease-out' : undefined
+                    animation: isActive ? 'rotateHex 0.6s ease-out' : undefined,
+                    transition: 'fill 0.15s ease-out'
                   }}
+                  onMouseEnter={() => !isCenter && !isActive && setHoveredHex(hex.id)}
+                  onMouseLeave={() => setHoveredHex(null)}
                 />
                 {isCenter && (
                   <g transform="translate(-16, -16)" style={{ pointerEvents: 'none' }}>
@@ -805,7 +806,6 @@ const HexGrid = () => {
         .hex-hover {
           transition: transform 0.15s ease-out, opacity 0.15s ease-out;
           cursor: pointer;
-          pointer-events: auto;
         }
         
         .hex-hover:hover {
@@ -813,13 +813,9 @@ const HexGrid = () => {
           opacity: 0.9;
         }
         
+        /* Cursor style for hexagons */
         .hex-normal {
-          transition: opacity 0.15s ease-out;
-          pointer-events: none;
-        }
-        
-        .hex-normal:hover {
-          opacity: 0.8;
+          cursor: default;
         }
       `}</style>
     </div>
