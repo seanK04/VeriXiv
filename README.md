@@ -1,5 +1,5 @@
 # veriXiv
-VeriXiv (Verify x ArXiv, pronounced Veri-kive) is a scalable and efficient research paper verifier that checks for reproducibility of your paper against semantically similar papers in your research domain. 
+veriXiv (Verify x ArXiv, pronounced Veri-kive) is a scalable and efficient research paper verifier that checks for reproducibility of your paper against semantically similar papers in your research domain. 
 
 ## Motivation
 A study in 2023 by [Magnusson et. al.](https://arxiv.org/pdf/2306.09562) in "Reproducibility in NLP: What Have We Learned from the Checklist?" conducted an empirical study on the effects of reproducibility of results of a paper with acceptance into reputable ML (NLP) conferences such as EMNLP.
