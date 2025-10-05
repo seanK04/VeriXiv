@@ -360,44 +360,67 @@ const HexGrid = () => {
   // Submit handler with API integration
   const handleSubmit = async () => {
     let paperId;
-    
-    if (inputMode === 'arxiv') {
-      // Parse arXiv URL
-      paperId = parseArxivUrl(arxivInput);
-      if (!paperId) {
-        alert('Invalid arXiv URL or ID. Please check your input.');
-        return;
-      }
-      
-      console.log('Processing arXiv paper:', paperId);
-      
-    } else {
-      // Handle PDF upload
-      if (!uploadedFile) {
-        alert('Please select a PDF file to upload');
-        return;
-      }
-      
-      console.log('Uploading PDF:', uploadedFile.name);
-      // TODO: Implement PDF upload flow
-      alert('PDF upload will be implemented - for now, please use an arXiv ID');
-      return;
-    }
+    let paperText = null;
+    const WORKER_URL = import.meta.env.VITE_WORKER_URL || 'http://localhost:8787';
+    const FLASK_URL = 'https://photoheliographic-unmorosely-king.ngrok-free.dev'; // Your ngrok URL
     
     setLoading(true);
     setModalOpen(false);
     
     try {
-      // Call the orchestrator endpoint
-      const WORKER_URL = import.meta.env.VITE_WORKER_URL || 'http://localhost:8787';
+      if (inputMode === 'arxiv') {
+        // Parse arXiv URL
+        paperId = parseArxivUrl(arxivInput);
+        if (!paperId) {
+          alert('Invalid arXiv URL or ID. Please check your input.');
+          setLoading(false);
+          setModalOpen(true);
+          return;
+        }
+        
+        console.log('Processing arXiv paper:', paperId);
+        
+      } else {
+        // Handle PDF upload
+        if (!uploadedFile) {
+          alert('Please select a PDF file to upload');
+          setLoading(false);
+          setModalOpen(true);
+          return;
+        }
+        
+        console.log('Uploading PDF:', uploadedFile.name);
+        
+        // Step 1: Upload PDF to Flask for text extraction
+        const formData = new FormData();
+        formData.append('file', uploadedFile);
+        
+        const uploadResponse = await fetch(`${FLASK_URL}/upload-pdf`, {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!uploadResponse.ok) {
+          const errorData = await uploadResponse.json();
+          throw new Error(errorData.error || 'Failed to upload PDF');
+        }
+        
+        const uploadData = await uploadResponse.json();
+        paperId = uploadData.paper_id;
+        paperText = uploadData.text;
+        
+        console.log(`PDF uploaded successfully. Paper ID: ${paperId}, Text length: ${uploadData.text_length}`);
+      }
       
+      // Call the orchestrator endpoint
       console.log('Calling Worker API at:', WORKER_URL);
       
       const response = await fetch(`${WORKER_URL}/api/analyze-full-pipeline`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          paper_id: paperId,
+          paper_id: inputMode === 'arxiv' ? paperId : null,
+          paper_text: paperText, // Only set for PDF uploads
           k: kValue
         })
       });
