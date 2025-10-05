@@ -87,7 +87,7 @@ const HexGrid = () => {
 
   // Animate grid panning
   useEffect(() => {
-    if (!autoScroll) return;
+    if (!autoScroll || modalOpen) return; // Don't auto-scroll when modal is open
     
     let animationFrame;
     let time = 0;
@@ -103,12 +103,13 @@ const HexGrid = () => {
     
     animationFrame = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animationFrame);
-  }, [autoScroll]);
+  }, [autoScroll, modalOpen]);
 
   // Handle mouse/touch drag with RAF for smooth updates
   const rafRef = useRef(null);
   
   const handlePointerDown = (e) => {
+    if (modalOpen) return; // Don't allow dragging when modal is open
     setIsDragging(true);
     setAutoScroll(false);
     setDragStart({
@@ -118,7 +119,7 @@ const HexGrid = () => {
   };
 
   const handlePointerMove = (e) => {
-    if (!isDragging) return;
+    if (!isDragging || modalOpen) return; // Don't allow dragging when modal is open
     
     // Cancel any pending animation frame
     if (rafRef.current) {
@@ -140,6 +141,19 @@ const HexGrid = () => {
       cancelAnimationFrame(rafRef.current);
     }
   };
+
+  // Stop dragging when modal opens
+  useEffect(() => {
+    if (modalOpen) {
+      setIsDragging(false);
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
+      if (wheelRafRef.current) {
+        cancelAnimationFrame(wheelRafRef.current);
+      }
+    }
+  }, [modalOpen]);
 
   // Handle keyboard navigation
   useEffect(() => {
@@ -194,6 +208,7 @@ const HexGrid = () => {
   const wheelRafRef = useRef(null);
   
   const handleWheel = (e) => {
+    if (modalOpen) return; // Don't allow scrolling when modal is open
     e.preventDefault();
     setAutoScroll(false);
     
