@@ -36,6 +36,8 @@ const HexGrid = () => {
   const [isFadingOut, setIsFadingOut] = useState(false);
   const [hoveredPaper, setHoveredPaper] = useState(null);
   const [fadingCards, setFadingCards] = useState(new Set());
+  const [hintDismissed, setHintDismissed] = useState(false);
+  const [hintVisible, setHintVisible] = useState(false);
   const [gridOffset, setGridOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -426,6 +428,10 @@ const HexGrid = () => {
     setTimeout(() => {
       setShowCards(false);
       setIsFadingOut(false);
+      // Show hint after cards fade out (only if not previously dismissed)
+      if (!hintDismissed) {
+        setHintVisible(true);
+      }
     }, 2000 + fadeOutDuration);
   };
 
@@ -449,6 +455,7 @@ const HexGrid = () => {
     setIsFadingOut(false);
     setHoveredPaper(null);
     setFadingCards(new Set());
+    setHintVisible(false);
     setArxivInput('');
     setUploadedFile(null);
     setFileError('');
@@ -464,15 +471,62 @@ const HexGrid = () => {
     return activeHexagons.find(h => h.id === hex.id);
   };
 
+  // Convert score (0-100) to color gradient: red -> yellow -> green
+  const getScoreColor = (score) => {
+    if (score >= 80) {
+      // High scores (80-100): Yellow to Green
+      const t = (score - 80) / 20; // 0 to 1
+      const r = Math.round(234 - t * 112); // 234 to 122
+      const g = Math.round(179 + t * 68);  // 179 to 247
+      const b = Math.round(8 + t * 86);    // 8 to 94
+      return `rgb(${r}, ${g}, ${b})`;
+    } else if (score >= 50) {
+      // Medium scores (50-80): Red/Orange to Yellow
+      const t = (score - 50) / 30; // 0 to 1
+      const r = Math.round(239 - t * 5);   // 239 to 234
+      const g = Math.round(68 + t * 111);  // 68 to 179
+      const b = 8;                         // constant
+      return `rgb(${r}, ${g}, ${b})`;
+    } else {
+      // Low scores (0-50): Dark Red to Red/Orange
+      const t = score / 50; // 0 to 1
+      const r = Math.round(185 + t * 54);  // 185 to 239
+      const g = Math.round(28 + t * 40);   // 28 to 68
+      const b = 8;                         // constant
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+  };
+
   const getHexColor = (hex) => {
-    if (isCenterHex(hex)) return '#ffcc00';
-    if (isActiveHex(hex)) return '#ffcc00';
+    if (isCenterHex(hex)) return '#E8E8E8'; // Light grey matching header
+    if (isActiveHex(hex)) {
+      // Find the associated paper to get its score
+      const paper = papers.find(p => p.hex.id === hex.id);
+      if (paper) {
+        return getScoreColor(paper.score);
+      }
+      return '#ffcc00'; // Fallback
+    }
     return '#ffffff';
   };
 
   const getHexStroke = (hex) => {
-    if (isCenterHex(hex)) return '#f59e0b';
-    if (isActiveHex(hex)) return '#f59e0b';
+    if (isCenterHex(hex)) return '#B8B8B8'; // Darker grey for stroke
+    if (isActiveHex(hex)) {
+      // Find the associated paper to get its score
+      const paper = papers.find(p => p.hex.id === hex.id);
+      if (paper) {
+        // Darken the fill color for the stroke
+        const fillColor = getScoreColor(paper.score);
+        // Simple darkening by reducing RGB values
+        const match = fillColor.match(/rgb\((\d+), (\d+), (\d+)\)/);
+        if (match) {
+          const [_, r, g, b] = match.map(Number);
+          return `rgb(${Math.max(0, r - 40)}, ${Math.max(0, g - 40)}, ${Math.max(0, b - 40)})`;
+        }
+      }
+      return '#f59e0b'; // Fallback
+    }
     return '#d1d5db';
   };
 
@@ -498,54 +552,64 @@ const HexGrid = () => {
         left: 0
       }}
     >
-      {/* Header */}
+      {/* Header - arXiv themed */}
       <div style={{
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         zIndex: 20,
-        backgroundColor: 'white',
-        boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
         pointerEvents: 'none'
       }}>
+        {/* Red arXiv-style header bar */}
         <div style={{
           width: '100%',
-          padding: '24px 24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between'
+          backgroundColor: '#B31B1B',
+          padding: '16px 24px',
+          borderBottom: '1px solid #8B1515'
         }}>
-          <div>
             <h1 style={{
               fontSize: '1.5rem',
               fontWeight: 600,
-              color: '#111827',
-              margin: 0
-            }}>Reproducibility Checker</h1>
-            <p style={{
-              fontSize: '0.875rem',
-              color: '#6b7280',
-              margin: '4px 0 0 0'
-            }}>Verify scientific rigor in ML research</p>
+            color: 'white',
+            margin: 0,
+            letterSpacing: '-0.02em'
+          }}>VeriXiv</h1>
           </div>
+        
+        {/* Grey subtitle bar */}
+        <div style={{
+          width: '100%',
+          backgroundColor: '#E8E8E8',
+          padding: '12px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderBottom: '1px solid #D0D0D0'
+        }}>
+          <p style={{
+            fontSize: '0.95rem',
+            color: '#333333',
+            margin: 0,
+            fontWeight: 500
+          }}>Reproducibility Checker &gt; Verify scientific rigor in ML research</p>
           {papers.length > 0 && (
             <button
               onClick={handleReset}
               style={{
                 padding: '8px 16px',
-                backgroundColor: '#f3f4f6',
-                borderRadius: '8px',
+                backgroundColor: '#B31B1B',
+                borderRadius: '4px',
                 fontSize: '0.875rem',
                 fontWeight: 500,
-                color: '#374151',
+                color: 'white',
                 border: 'none',
                 cursor: 'pointer',
                 transition: 'background-color 0.15s',
                 pointerEvents: 'auto'
               }}
-              onMouseOver={(e) => e.target.style.backgroundColor = '#e5e7eb'}
-              onMouseOut={(e) => e.target.style.backgroundColor = '#f3f4f6'}
+              onMouseOver={(e) => e.target.style.backgroundColor = '#8B1515'}
+              onMouseOut={(e) => e.target.style.backgroundColor = '#B31B1B'}
             >
               Reset
             </button>
@@ -755,7 +819,7 @@ const HexGrid = () => {
                   }}
                 />
                   <g transform="translate(-16, -16)" style={{ pointerEvents: 'none' }}>
-                    <Plus size={32} stroke="#f59e0b" strokeWidth={2.5} />
+                    <Plus size={32} stroke="#B8B8B8" strokeWidth={2.5} />
                   </g>
               </g>
             );
@@ -803,23 +867,58 @@ const HexGrid = () => {
       )}
 
       {/* Tooltip - Hover Instruction */}
-      {papers.length > 0 && !showCards && !hoveredPaper && (
+      {hintVisible && papers.length > 0 && (
         <div style={{
           position: 'absolute',
           bottom: '80px',
-          right: '16px',
+          left: '16px',
           backgroundColor: 'rgba(234, 179, 8, 0.95)',
           color: 'white',
           padding: '12px 20px',
+          paddingRight: '40px',
           borderRadius: '8px',
           fontSize: '14px',
           fontWeight: 500,
           boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
           zIndex: 25,
-          animation: 'fadeIn 0.5s ease-out',
-          pointerEvents: 'none'
+          animation: hintVisible ? 'fadeIn 0.5s ease-out' : 'fadeOut 0.4s ease-out',
+          pointerEvents: 'auto',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
         }}>
-          💡 Hover over yellow hexagons to see paper details
+          <span>💡 Hover over colored hexagons to see paper details</span>
+          <button
+            onClick={() => {
+              setHintDismissed(true);
+              setHintVisible(false);
+            }}
+            style={{
+              position: 'absolute',
+              right: '8px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              background: 'rgba(255, 255, 255, 0.3)',
+              border: 'none',
+              borderRadius: '50%',
+              width: '24px',
+              height: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: 'white',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              transition: 'background 0.2s ease',
+              padding: 0,
+              lineHeight: 1
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.5)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'}
+          >
+            ×
+          </button>
         </div>
       )}
 
@@ -828,7 +927,7 @@ const HexGrid = () => {
         const screenX = viewportSize.width / 2 + paper.hex.x + gridOffset.x;
         const screenY = viewportSize.height / 2 + paper.hex.y + gridOffset.y;
         // All cards to the right
-        const cardOffset = idx % 2 === 0 ? 120 : 140;
+        const cardOffset = 120;
         
         const isHovered = hoveredPaper === paper.id;
         const isFading = fadingCards.has(paper.id);
@@ -896,7 +995,7 @@ const HexGrid = () => {
               <div style={{
                 fontSize: '1.875rem',
                 fontWeight: 700,
-                color: '#eab308'
+                color: getScoreColor(paper.score)
               }}>{paper.score}%</div>
               <div style={{
                 marginLeft: '8px',
