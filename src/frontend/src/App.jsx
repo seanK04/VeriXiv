@@ -1984,36 +1984,30 @@ const HexGrid = () => {
                       {/* Tooltip */}
                       {hoveredRubricField === field && (
                         <div style={{
-                          position: 'absolute',
-                          left: '100%',
+                          position: 'fixed',
+                          left: '50%',
                           top: '50%',
-                          transform: 'translateY(-50%)',
-                          marginLeft: '16px',
+                          transform: 'translate(-50%, -50%)',
                           backgroundColor: '#1f2937',
                           color: 'white',
-                          padding: '10px 14px',
+                          padding: '12px 16px',
                           borderRadius: '6px',
                           fontSize: '0.8125rem',
                           lineHeight: '1.5',
-                          maxWidth: '280px',
-                          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)',
-                          zIndex: 60,
+                          maxWidth: '320px',
+                          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+                          zIndex: 100,
                           pointerEvents: 'none',
                           animation: 'tooltipFadeIn 0.2s ease-out'
                         }}>
-                          {RUBRIC_DESCRIPTIONS[field]}
-                          {/* Arrow pointing left */}
                           <div style={{
-                            position: 'absolute',
-                            right: '100%',
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            width: 0,
-                            height: 0,
-                            borderTop: '8px solid transparent',
-                            borderBottom: '8px solid transparent',
-                            borderRight: '8px solid #1f2937'
-                          }} />
+                            fontWeight: 600,
+                            marginBottom: '6px',
+                            fontSize: '0.875rem'
+                          }}>
+                            {field}
+                          </div>
+                          {RUBRIC_DESCRIPTIONS[field]}
                         </div>
                       )}
                     </div>
@@ -2053,11 +2047,11 @@ const HexGrid = () => {
         @keyframes tooltipFadeIn {
           from { 
             opacity: 0; 
-            transform: translateY(-50%) translateX(-5px); 
+            transform: translate(-50%, -50%) scale(0.95); 
           }
           to { 
             opacity: 1; 
-            transform: translateY(-50%) translateX(0); 
+            transform: translate(-50%, -50%) scale(1); 
           }
         }
 
