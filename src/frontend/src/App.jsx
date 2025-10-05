@@ -51,6 +51,7 @@ const HexGrid = () => {
   const [queryIdCounter, setQueryIdCounter] = useState(0);
   const [draggingHex, setDraggingHex] = useState(null); // Track which hex is being dragged
   const [draggedHexPosition, setDraggedHexPosition] = useState(null); // Current drag position
+  const [hoveredRubricField, setHoveredRubricField] = useState(null); // Track which rubric field is hovered for tooltip
 
   // Hexagon dimensions
   const hexSize = 60;
@@ -824,6 +825,29 @@ const HexGrid = () => {
     "New Data Description",
     "Data Languages"
   ];
+
+  // Rubric field descriptions for tooltips
+  const RUBRIC_DESCRIPTIONS = {
+    "Model Description": "A clear description of the mathematical setting, algorithm, and/or model",
+    "Link to Code": "A link to a downloadable source code, with specification of all dependencies, including external libraries",
+    "Infrastructure": "A description of computing infrastructure used",
+    "Runtime": "Average runtime for each approach",
+    "Parameters": "The number of parameters in each model",
+    "Validation Performance": "Corresponding validation performance for each reported test result",
+    "Metrics": "Explanation of evaluation metrics used, with links to code",
+    "Number of Training/Eval Runs": "The exact number of training and evaluation runs",
+    "Hyperparameter Bounds": "Bounds for each hyperparameter",
+    "Hyperparameter Best Config": "Hyperparameter configurations for best-performing models",
+    "Hyperparameter Search": "Number of hyperparameter search trials",
+    "Hyperparameter Method": "The method of choosing hyperparameter values (e.g., uniform sampling, manual tuning, etc.) and the criterion used to select among them (e.g., accuracy)",
+    "Expected Performance": "Summary statistics of the results (e.g., mean, variance, error bars, etc.)",
+    "Data Statistics": "Relevant statistics such as number of examples",
+    "Data Split": "Details of train/validation/test splits",
+    "Data Processing": "Explanation of any data that were excluded, and all pre-processing steps",
+    "Data Download": "A link to a downloadable version of the data",
+    "New Data Description": "For new data collected, a complete description of the data collection process, such as instructions to annotators and methods for quality control",
+    "Data Languages": "For natural language data, the name of the language(s)"
+  };
 
   // Get icon for rubric field
   const getRubricIcon = (field) => {
@@ -1890,13 +1914,16 @@ const HexGrid = () => {
                         backgroundColor: idx % 2 === 0 ? '#f9fafb' : '#ffffff',
                         borderRadius: '6px',
                         transition: 'background-color 0.15s',
-                        cursor: 'default'
+                        cursor: 'default',
+                        position: 'relative'
                       }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.backgroundColor = '#f3f4f6';
+                        setHoveredRubricField(field);
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.backgroundColor = idx % 2 === 0 ? '#f9fafb' : '#ffffff';
+                        setHoveredRubricField(null);
                       }}
                     >
                       {/* Category Icon */}
@@ -1953,6 +1980,42 @@ const HexGrid = () => {
                       }}>
                         {getGradeIcon(grade)}
                       </div>
+
+                      {/* Tooltip */}
+                      {hoveredRubricField === field && (
+                        <div style={{
+                          position: 'absolute',
+                          left: '100%',
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                          marginLeft: '16px',
+                          backgroundColor: '#1f2937',
+                          color: 'white',
+                          padding: '10px 14px',
+                          borderRadius: '6px',
+                          fontSize: '0.8125rem',
+                          lineHeight: '1.5',
+                          maxWidth: '280px',
+                          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)',
+                          zIndex: 60,
+                          pointerEvents: 'none',
+                          animation: 'tooltipFadeIn 0.2s ease-out'
+                        }}>
+                          {RUBRIC_DESCRIPTIONS[field]}
+                          {/* Arrow pointing left */}
+                          <div style={{
+                            position: 'absolute',
+                            right: '100%',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            width: 0,
+                            height: 0,
+                            borderTop: '8px solid transparent',
+                            borderBottom: '8px solid transparent',
+                            borderRight: '8px solid #1f2937'
+                          }} />
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1985,6 +2048,17 @@ const HexGrid = () => {
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes tooltipFadeIn {
+          from { 
+            opacity: 0; 
+            transform: translateY(-50%) translateX(-5px); 
+          }
+          to { 
+            opacity: 1; 
+            transform: translateY(-50%) translateX(0); 
+          }
         }
 
         @keyframes popupScale {
