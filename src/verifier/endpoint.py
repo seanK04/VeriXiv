@@ -8,6 +8,7 @@ import fitz
 from score import score as score_paper
 from constants import MODEL_NAME
 from diskcache import Cache
+from validator import NLP_REPRODUCABILITY_RUBRIC_FIELDS, VALID_VALUES
 
 """
 Endpoint for the scoring service
@@ -40,35 +41,64 @@ def get_pdf_as_bytes(pdf_url: str):
     except requests.RequestException as e:
         print(f"Error downloading PDF from {pdf_url}: {e}")
         return None
+    
+def rubric_to_num(graded_rubric: dict[str, str], fields: list[str]):
+    """
+    Complete : 1
+    Partial : 0.5
+    Not Present : 0
+    Not Applicable : 1
+    """
+    POINTS = [1, 0.5, 0, 1]
+    POINTS_MAP = {
+        rubric_mark : point for (rubric_mark, point) in zip(VALID_VALUES, POINTS)
+        }
+
+    points = 0
+    total_possible_points = len(fields)
+    for field in fields:
+        points += POINTS_MAP[graded_rubric[field]]
+
+    return points / total_possible_points
 
 
 @app.route("/score", methods=["POST"])
 def score_endpoint():
     data = request.json
-    paper_id = data["paper_id"]
-    
-    # Get PDF URL from request (passed from Workers/Vectorize metadata)
-    pdf_url = data.get("pdf_url")
+
+    paper_id = data.get("paper_id", None)
+    if not paper_id:
+        return jsonify({"error": "ArXiv Paper Id is required"}), 400
+
+    pdf_url = data.get("pdf_url", None)
     if not pdf_url:
         return jsonify({"error": "PDF URL is required"}), 400
-    
-    # Download PDF using the provided URL from Vectorize metadata
-    raw_pdf_bytes = get_pdf_as_bytes(pdf_url)
-    if raw_pdf_bytes is None:
-        return jsonify({"error": "Failed to download PDF"}), 500
+
+    if paper_id in cache:
+        print("Cache hit! Using cached result.")
+        result = cache[paper_id]
+    else:
+        raw_pdf_bytes = get_pdf_as_bytes(pdf_url)
+        if raw_pdf_bytes is None:
+            return jsonify({"error": "Failed to download PDF"}), 500
         
-    # Extract text from PDF
-    doc = fitz.open(stream=raw_pdf_bytes, filetype="pdf")
-    paper_text = ''
-    for page in doc:
-        paper_text += page.get_text()
-    
-    # Call score_paper directly - let it handle its own caching
-    result = score_paper(paper_text, MODEL_NAME)
-    score = result['fields']  # Extract the fields from the result
+        doc = fitz.open(stream=raw_pdf_bytes, filetype="pdf")
+        paper_text = ''
+        for page in doc:
+            paper_text += page.get_text()
+
+        print("Cache miss! Deferring to Gemini API.")
+        result = score_paper(paper_text, MODEL_NAME)
+        cache[paper_id] = result
+
+    graded_rubric = result['fields']
+    graded_rubric_score = rubric_to_num(graded_rubric, NLP_REPRODUCABILITY_RUBRIC_FIELDS)
+
+    print(f"Graded rubric as number: {graded_rubric_score}")
     
     return jsonify({
-        "score": score,
+        "graded_rubric": graded_rubric,
+        "graded_rubric_score" : graded_rubric_score,
         "paper_id": paper_id,
         "pdf_url": pdf_url,
         "analysis_timestamp": str(datetime.now())

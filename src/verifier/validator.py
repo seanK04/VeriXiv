@@ -1,9 +1,9 @@
 from typing import Dict, List, Optional
+VALID_VALUES = ["Complete", "Partial", "Not Present", "Not Applicable"]
 
 class RubricValidator:
     """Validate and extract rubric assessments."""
     
-    VALID_VALUES = ["Complete", "Partial", "Not Present", "Not Applicable"]
     
     def __init__(self, required_fields: List[str]):
         """
@@ -63,9 +63,10 @@ class RubricValidator:
         for field in self.required_fields:
             if field not in fields:
                 errors.append(f"Missing required field: {field}")
+                fields[field] = "Not Present"
             else:
                 value = fields.get(field, "")
-                if value not in self.VALID_VALUES:
+                if value not in VALID_VALUES:
                     errors.append(f"Invalid value for {field}: '{value}'")
         
         for field in fields:
