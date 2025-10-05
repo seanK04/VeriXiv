@@ -629,7 +629,8 @@ const HexGrid = () => {
         assessment: paper.assessment,
         isUploadedPaper: false,
         queryId: currentQueryId,
-        hex: nearby[idx]
+        hex: nearby[idx],
+        pdfUrl: paper.pdf_url || `https://arxiv.org/pdf/${paper.id.replace('arxiv:', '')}.pdf`
       }));
       
       // Add uploaded paper if it exists
@@ -649,7 +650,8 @@ const HexGrid = () => {
           isUploadedPaper: true,
           queryId: currentQueryId,
           paperName: customName, // Also store in paperName for label
-          hex: nearby[mappedSimilarPapers.length] // Assign to the next available hexagon
+          hex: nearby[mappedSimilarPapers.length], // Assign to the next available hexagon
+          pdfUrl: data.uploaded_paper.pdf_url || (data.uploaded_paper.id.startsWith('arxiv:') ? `https://arxiv.org/pdf/${data.uploaded_paper.id.replace('arxiv:', '')}.pdf` : '#')
         };
         allPapers.push(uploadedPaperObj);
         console.log(`Uploaded paper score: ${uploadedPaperObj.score}%`);
@@ -1811,15 +1813,32 @@ const HexGrid = () => {
           >
             {/* Header */}
             <div style={{ marginBottom: '24px' }}>
-              <h2 style={{
-                fontSize: '1.25rem',
-                fontWeight: 600,
-                color: '#111827',
-                marginBottom: '12px',
-                lineHeight: 1.4
-              }}>
+              <a
+                href={selectedPaper.pdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  fontSize: '1.25rem',
+                  fontWeight: 600,
+                  color: '#111827',
+                  marginBottom: '12px',
+                  lineHeight: 1.4,
+                  textDecoration: 'none',
+                  transition: 'color 0.2s ease-out',
+                  cursor: 'pointer',
+                  display: 'block'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = '#3B82F6';
+                  e.currentTarget.style.textDecoration = 'underline';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = '#111827';
+                  e.currentTarget.style.textDecoration = 'none';
+                }}
+              >
                 {selectedPaper.title}
-              </h2>
+              </a>
               
               <div style={{
                 display: 'flex',

@@ -715,7 +715,8 @@ async function handleFullPipeline(request, env, corsHeaders) {
         code_available: uploadedPaperScore.rubric_details?.['Link to Code'] !== 'Not Present',
         rubric_breakdown: uploadedPaperScore.rubric_details,
         assessment: uploadedPaperScore.assessment,
-        is_uploaded_paper: true
+        is_uploaded_paper: true,
+        pdf_url: uploadedPaperScore.pdf_url || (uploadedPaperScore.id && uploadedPaperScore.id.startsWith && uploadedPaperScore.id.startsWith('arxiv:') ? `https://arxiv.org/pdf/${uploadedPaperScore.id.replace('arxiv:', '')}.pdf` : '')
       } : null,
       similar_papers: scoredPapers.map(p => ({
         id: p.id,
@@ -727,7 +728,8 @@ async function handleFullPipeline(request, env, corsHeaders) {
         code_available: p.rubric_details?.['Link to Code'] !== 'Not Present',
         rubric_breakdown: p.rubric_details,
         assessment: p.assessment,
-        abstract: p.abstract
+        abstract: p.abstract,
+        pdf_url: p.pdf_url
       })),
       total_analyzed: scoredPapers.length + (uploadedPaperScore ? 1 : 0),
       timestamp: new Date().toISOString()
