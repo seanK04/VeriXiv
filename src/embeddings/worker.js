@@ -636,14 +636,15 @@ async function handleFullPipeline(request, env, corsHeaders) {
       
       if (scoreResponse.ok) {
         const scoreData = await scoreResponse.json();
+        const rubricDetails = scoreData.graded_rubric || {};
         uploadedPaperScore = {
           id: paper_id || 'uploaded',
           title: 'Your Uploaded Paper',
           authors: [],
           similarity_score: 1.0, // Perfect similarity to itself
           rubric_score: scoreData.graded_rubric_score || 0,
-          rubric_details: scoreData.graded_rubric || {},
-          page_references: scoreData.page_references || {},
+          rubric_details: rubricDetails,
+          page_references: filterPageReferences(scoreData.page_references || {}, rubricDetails),
           assessment: scoreData.graded_rubric?.Assessment || 'No assessment available',
           is_uploaded_paper: true
         };
@@ -674,12 +675,13 @@ async function handleFullPipeline(request, env, corsHeaders) {
         }
         
         const scoreData = await scoreResponse.json();
+        const rubricDetails = scoreData.graded_rubric || {};
         
         return {
           ...paper,
           rubric_score: scoreData.graded_rubric_score || 0,
-          rubric_details: scoreData.graded_rubric || {},
-          page_references: scoreData.page_references || {},
+          rubric_details: rubricDetails,
+          page_references: filterPageReferences(scoreData.page_references || {}, rubricDetails),
           assessment: scoreData.graded_rubric?.Assessment || 'No assessment available'
         };
       } catch (error) {
@@ -752,6 +754,23 @@ async function handleFullPipeline(request, env, corsHeaders) {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
+}
+
+// Helper function to filter page references for fields that are "Not Applicable"
+function filterPageReferences(pageReferences, rubricDetails) {
+  if (!pageReferences || !rubricDetails) {
+    return pageReferences || {};
+  }
+  
+  const filtered = {};
+  for (const [field, pages] of Object.entries(pageReferences)) {
+    // Only include page references if the field value is not "Not Applicable"
+    if (rubricDetails[field] !== 'Not Applicable') {
+      filtered[field] = pages;
+    }
+  }
+  
+  return filtered;
 }
 
 // Helper function to find similar papers (reuses existing logic)
