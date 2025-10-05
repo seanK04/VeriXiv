@@ -626,6 +626,7 @@ const HexGrid = () => {
         codeAvailable: paper.code_available,
         replications: Math.round(paper.similarity_score * 100), // Convert similarity to percentage
         rubricBreakdown: paper.rubric_breakdown,
+        pageReferences: paper.page_references || {},
         assessment: paper.assessment,
         isUploadedPaper: false,
         queryId: currentQueryId,
@@ -646,6 +647,7 @@ const HexGrid = () => {
           codeAvailable: data.uploaded_paper.code_available,
           replications: Math.round(data.uploaded_paper.similarity_score * 100),
           rubricBreakdown: data.uploaded_paper.rubric_breakdown,
+          pageReferences: data.uploaded_paper.page_references || {},
           assessment: data.uploaded_paper.assessment,
           isUploadedPaper: true,
           queryId: currentQueryId,
@@ -1875,6 +1877,8 @@ const HexGrid = () => {
               }}>
                 {RUBRIC_FIELDS.map((field, idx) => {
                   const grade = selectedPaper.rubricBreakdown?.[field] || "Not Present";
+                  const pageRefs = selectedPaper.pageReferences?.[field] || [];
+                  const hasPageRefs = pageRefs.length > 0 && pageRefs[0] !== -1;
                   
                   return (
                     <div
@@ -1915,6 +1919,30 @@ const HexGrid = () => {
                       }}>
                         {field}
                       </div>
+
+                      {/* Page References */}
+                      {hasPageRefs && (
+                        <div style={{
+                          marginLeft: '8px',
+                          fontSize: '0.75rem',
+                          color: '#6b7280',
+                          backgroundColor: '#f3f4f6',
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          fontWeight: 500,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}>
+                          <span style={{ fontSize: '0.7rem' }}>📄</span>
+                          <span>
+                            {pageRefs.length === 1 
+                              ? `Page ${pageRefs[0]}`
+                              : `Pages ${pageRefs.join(', ')}`
+                            }
+                          </span>
+                        </div>
+                      )}
 
                       {/* Grade Status Icon */}
                       <div style={{

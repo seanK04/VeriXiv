@@ -643,6 +643,7 @@ async function handleFullPipeline(request, env, corsHeaders) {
           similarity_score: 1.0, // Perfect similarity to itself
           rubric_score: scoreData.graded_rubric_score || 0,
           rubric_details: scoreData.graded_rubric || {},
+          page_references: scoreData.page_references || {},
           assessment: scoreData.graded_rubric?.Assessment || 'No assessment available',
           is_uploaded_paper: true
         };
@@ -678,6 +679,7 @@ async function handleFullPipeline(request, env, corsHeaders) {
           ...paper,
           rubric_score: scoreData.graded_rubric_score || 0,
           rubric_details: scoreData.graded_rubric || {},
+          page_references: scoreData.page_references || {},
           assessment: scoreData.graded_rubric?.Assessment || 'No assessment available'
         };
       } catch (error) {
@@ -714,6 +716,7 @@ async function handleFullPipeline(request, env, corsHeaders) {
         data_available: uploadedPaperScore.rubric_details?.['Data Download'] !== 'Not Present',
         code_available: uploadedPaperScore.rubric_details?.['Link to Code'] !== 'Not Present',
         rubric_breakdown: uploadedPaperScore.rubric_details,
+        page_references: uploadedPaperScore.page_references,
         assessment: uploadedPaperScore.assessment,
         is_uploaded_paper: true,
         pdf_url: uploadedPaperScore.pdf_url || (uploadedPaperScore.id && uploadedPaperScore.id.startsWith && uploadedPaperScore.id.startsWith('arxiv:') ? `https://arxiv.org/pdf/${uploadedPaperScore.id.replace('arxiv:', '')}.pdf` : '')
@@ -727,6 +730,7 @@ async function handleFullPipeline(request, env, corsHeaders) {
         data_available: p.rubric_details?.['Data Download'] !== 'Not Present',
         code_available: p.rubric_details?.['Link to Code'] !== 'Not Present',
         rubric_breakdown: p.rubric_details,
+        page_references: p.page_references,
         assessment: p.assessment,
         abstract: p.abstract,
         pdf_url: p.pdf_url
